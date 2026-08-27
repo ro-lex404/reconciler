@@ -1,0 +1,35 @@
+# PyTorch CPU index to avoid downloading multi-gigabyte CUDA wheels
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# --- Web API & Server ---
+fastapi==0.115.*
+uvicorn[standard]==0.34.*
+pydantic-settings==2.*
+python-multipart==0.0.18
+
+# --- Background Worker & Broker ---
+celery[redis]==5.4.*
+
+# --- Database & Vector Storage (PostgreSQL) ---
+psycopg2-binary==2.9.*
+pgvector==0.3.*
+sqlalchemy==2.*
+
+# --- In-Memory Data Analytics ---
+duckdb==1.5.*
+pandas==2.2.*
+
+# --- AI & Agentic Orchestration ---
+langchain==0.3.*
+langchain-community==0.3.*
+langchain-core==0.3.*
+langgraph==0.2.*
+langchain-openai==0.2.*  # Replace if using Anthropic or local models
+langchain-groq==0.2.*
+langchain-huggingface==0.1.*
+sentence-transformers==3.*
+
+pypdf==5.0.*
+
+faker==40.*
+reportlab==5.0.*

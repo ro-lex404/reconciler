@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  # 1. PostgreSQL with pgvector extension pre-installed
+  db:
+    image: ankane/pgvector:latest
+    container_name: hybrid_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: hybrid_ai
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myuser -d hybrid_ai"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Redis message broker for Celery tasks
+  redis:
+    image: redis:7-alpine
+    container_name: hybrid_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  # 3. FastAPI Backend
+  api:
+    image: analytics-platform-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hybrid_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://myuser:mypassword@db:5432/hybrid_ai
+      - REDIS_URL=redis://redis:6379/0
+      - FINANCE_DATA_DIR=/app/finance-data
+      - GROQ_API_KEY=${GROQ_API_KEY}
+    volumes:
+      - ./backend:/app                # Hot-reloading for local development
+      - ./backend/uploads:/app/uploads   # Shared volume for PDFs/CSVs
+      - ./razorpay-reconciler/data:/app/finance-data:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  # 4. Celery Worker (Background Processing)
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: analytics-platform-backend:latest
+    container_name: hybrid_celery
+    restart: unless-stopped
+    # The command overrides the default FastAPI start command in your Dockerfile
+    command: celery -A app.worker worker --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://myuser:mypassword@db:5432/hybrid_ai
+      - REDIS_URL=redis://redis:6379/0
+      - FINANCE_DATA_DIR=/app/finance-data
+    volumes:
+      - ./backend:/app
+      - ./backend/uploads:/app/uploads   # Must match API uploads mount so Celery can read uploaded files
+      - ./razorpay-reconciler/data:/app/finance-data:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  # 5. Next.js Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: hybrid_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - WATCHPACK_POLLING=true
+    volumes:
+      - ./frontend:/app               # Hot-reloading
+      - /app/node_modules             # Prevent local node_modules from overwriting container's
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:

@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Node.js dependencies
+node_modules/
+
+# Next.js
+frontend/.next/
+frontend/out/
+frontend/build/
+
+# Test and build output
+coverage/
+dist/
+*.tsbuildinfo
+
+backend/uploads/
+
+# Frontend environment files
+frontend/.env*
+!frontend/.env.example
+
+# Package-manager and debug files
+frontend/.pnp
+frontend/.pnp.*
+frontend/.yarn/*
+!frontend/.yarn/patches
+!frontend/.yarn/plugins
+!frontend/.yarn/releases
+!frontend/.yarn/versions
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.pnpm-debug.log*
+
+# Vercel
+frontend/.vercel/
+
+# IDE and OS files
+.DS_Store
+*.pem
+.vscode/
+*.swp
+*.swo
+
+# Local databases and logs
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Generated frontend type file
+frontend/next-env.d.ts
