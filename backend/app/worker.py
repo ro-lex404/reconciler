@@ -30,8 +30,11 @@ def process_document_task(file_path: str, filename: str):
         print(message)
         return {"status": "Error", "message": message}
 
-    # Compute embeddings once per task, then reuse for PDF/CSV branches.
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    # Compute embeddings once per task with CPU SIMD batching for fast vectorization
+    embeddings = HuggingFaceEmbeddings(
+        model_name="all-MiniLM-L6-v2",
+        encode_kwargs={"batch_size": 32}
+    )
     lower_filename = filename.lower()
     
     if lower_filename.endswith(".pdf"):
@@ -48,8 +51,8 @@ def process_document_task(file_path: str, filename: str):
             # ==========================================
             print("Chunking text with financial boundary preservation...")
             text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=500,
-                chunk_overlap=100,
+                chunk_size=1200,
+                chunk_overlap=200,
                 length_function=len
             )
             chunks = text_splitter.split_documents(documents)

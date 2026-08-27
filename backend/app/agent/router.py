@@ -20,7 +20,7 @@ import duckdb
 
 print("Loading HuggingFace Embeddings into API memory...")
 try:
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2", encode_kwargs={"batch_size": 32})
 except Exception:
     embeddings = HuggingFaceEmbeddings(size=384)
 
