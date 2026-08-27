@@ -116,7 +116,7 @@ def llm_extraction_node(state: PDFReconcilerState) -> Dict[str, Any]:
 
     if groq_api_key:
         try:
-            llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, groq_api_key=groq_api_key)
+            llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0, groq_api_key=groq_api_key)
             structured_llm = llm.with_structured_output(ExtractedInvoiceList)
 
             prompt = f"""Extract all transaction or invoice records from this financial document text.
