@@ -44,23 +44,29 @@ def process_document_task(file_path: str, filename: str):
             documents = loader.load()
             
             # ==========================================
-            # 3. Chunk the Text
+            # 3. Chunk the Text with Header Prepending
             # ==========================================
-            print("Chunking text...")
+            print("Chunking text with financial boundary preservation...")
             text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000,
-                chunk_overlap=200,
+                chunk_size=500,
+                chunk_overlap=100,
                 length_function=len
             )
             chunks = text_splitter.split_documents(documents)
             
-            for chunk in chunks:
+            for idx, chunk in enumerate(chunks):
+                page_num = chunk.metadata.get("page", 0) + 1
+                # Prepend document identity to chunk content for vector grounding
+                chunk.page_content = f"Document: {filename} (Page {page_num})\nContent:\n{chunk.page_content}"
                 chunk.metadata["source_file"] = filename
+                chunk.metadata["page_number"] = page_num
+                chunk.metadata["chunk_id"] = f"{filename}_chunk_{idx}"
+                chunk.metadata["file_type"] = "pdf"
             
             # ==========================================
-            # 4. Local HuggingFace Embeddings (Free)
+            # 4. Local Embeddings & Vector Storage
             # ==========================================
-            print(f"Generating local embeddings for {len(chunks)} chunks and saving to pgvector...")
+            print(f"Generating embeddings for {len(chunks)} contextual chunks and saving to PGVector...")
             
             PGVector.from_documents(
                 embedding=embeddings,
