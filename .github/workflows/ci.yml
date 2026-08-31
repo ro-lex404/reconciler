@@ -29,7 +29,7 @@ jobs:
 
       - name: Verify Reconciliation Service Execution
         run: |
-          python -c "from app.services.reconciliation import reconcile_settlements, default_finance_data_dir; data_dir = default_finance_data_dir(); res = reconcile_settlements(data_dir / 'razorpay_settlements.csv', data_dir / 'bank_statement.csv'); print('CI Verification Passed. Matched:', res['matched_transactions'])"
+          python -c "from app.services.reconciliation import reconcile_settlements, resolve_finance_dataset_paths; rp, bk = resolve_finance_dataset_paths(); res = reconcile_settlements(rp, bk); print('CI Verification Passed. Matched:', res['matched_transactions'], 'Match Rate:', res['match_rate'])"
         working-directory: ./backend
 
   frontend-build:

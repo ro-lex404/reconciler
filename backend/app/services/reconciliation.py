@@ -9,18 +9,23 @@ import duckdb
 
 def default_finance_data_dir() -> Path:
     if os.getenv("FINANCE_DATA_DIR"):
-        return Path(os.getenv("FINANCE_DATA_DIR"))
+        env_p = Path(os.getenv("FINANCE_DATA_DIR"))
+        if env_p.exists() and env_p.is_dir():
+            return env_p
 
     for p in [
-        Path(__file__).resolve().parents[2] / "data",
         Path(__file__).resolve().parents[3] / "data",
+        Path(__file__).resolve().parents[2] / "data",
         Path("/app/data"),
+        Path("/app/finance-data"),
         Path("../data").resolve(),
+        Path("data").resolve(),
     ]:
         if p.exists() and p.is_dir():
-            return p
+            if any(p.glob("*.csv")) or any(p.glob("*/*.csv")):
+                return p
 
-    return Path("../data").resolve()
+    return Path(__file__).resolve().parents[3] / "data"
 
 
 def resolve_finance_dataset_paths(
