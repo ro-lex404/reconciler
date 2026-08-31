@@ -11,14 +11,74 @@ def default_finance_data_dir() -> Path:
     if os.getenv("FINANCE_DATA_DIR"):
         return Path(os.getenv("FINANCE_DATA_DIR"))
 
-    # Check data/july in root repository
-    root_dir = Path(__file__).resolve().parents[2]
-    july_dir = root_dir / "data" / "july"
-    if july_dir.exists() and (july_dir / "bank_statement.csv").exists():
-        return july_dir
+    for p in [
+        Path(__file__).resolve().parents[2] / "data",
+        Path(__file__).resolve().parents[3] / "data",
+        Path("/app/data"),
+        Path("../data").resolve(),
+    ]:
+        if p.exists() and p.is_dir():
+            return p
 
-    fallback = Path(__file__).resolve().parents[3] / "razorpay-reconciler" / "data"
-    return fallback
+    return Path("../data").resolve()
+
+
+def resolve_finance_dataset_paths(
+    hint_filename: str | None = None,
+    razorpay_path: str | Path | None = None,
+    bank_path: str | Path | None = None,
+) -> tuple[Path, Path]:
+    """Dynamically resolves the appropriate razorpay settlements and bank statement CSV files
+
+    based on month hints (e.g. 'august', 'july') or directory scans.
+    """
+    if razorpay_path and bank_path:
+        return Path(razorpay_path), Path(bank_path)
+
+    month = "july"
+    if hint_filename:
+        lower = str(hint_filename).lower()
+        if "aug" in lower:
+            month = "august"
+        elif "jul" in lower:
+            month = "july"
+
+    root_data = default_finance_data_dir()
+
+    # Search candidate directories in priority order: subfolder first, then root data folder
+    candidate_dirs = [
+        root_data / month,
+        root_data,
+    ]
+
+    for d in candidate_dirs:
+        if not d.exists() or not d.is_dir():
+            continue
+        rp_candidates = (
+            list(d.glob(f"*{month}*razorpay*.csv"))
+            + list(d.glob(f"*razorpay*{month}*.csv"))
+            + list(d.glob(f"razorpay_settlements_{month}.csv"))
+            + list(d.glob("*razorpay*.csv"))
+        )
+        bk_candidates = (
+            list(d.glob(f"*{month}*bank*.csv"))
+            + list(d.glob(f"*bank*{month}*.csv"))
+            + list(d.glob(f"bank_statement_{month}.csv"))
+            + list(d.glob("*bank*.csv"))
+        )
+        if rp_candidates and bk_candidates:
+            return rp_candidates[0], bk_candidates[0]
+
+    # Default fallback
+    fallback_dir = root_data / month if (root_data / month).exists() else root_data
+    rp_default = fallback_dir / f"razorpay_settlements_{month}.csv"
+    bk_default = fallback_dir / f"bank_statement_{month}.csv"
+    if not rp_default.exists():
+        rp_default = fallback_dir / "razorpay_settlements.csv"
+    if not bk_default.exists():
+        bk_default = fallback_dir / "bank_statement.csv"
+
+    return rp_default, bk_default
 
 
 def reconcile_settlements(
@@ -231,14 +291,17 @@ def update_latest_pdf_reconciliation(results: dict[str, Any]) -> None:
 def get_reconciliation_context_summary(
     razorpay_path: str | Path | None = None,
     bank_path: str | Path | None = None,
+    hint_filename: str | None = None,
 ) -> str:
     """Generates a structured context string of live reconciliation metrics and exception details for the AI Settlement Q&A Agent."""
     global LATEST_PDF_RECONCILIATION
-    data_dir = default_finance_data_dir()
-    rp_file = razorpay_path or str(data_dir / "razorpay_settlements.csv")
-    bk_file = bank_path or str(data_dir / "bank_statement.csv")
 
-    res = reconcile_settlements(rp_file, bk_file)
+    hint = hint_filename
+    if not hint and LATEST_PDF_RECONCILIATION:
+        hint = LATEST_PDF_RECONCILIATION.get("filename") or LATEST_PDF_RECONCILIATION.get("source")
+
+    rp_file_path, bk_file_path = resolve_finance_dataset_paths(hint, razorpay_path, bank_path)
+    res = reconcile_settlements(rp_file_path, bk_file_path)
     exceptions = res["exceptions"]
     matches = res["matches"]
 

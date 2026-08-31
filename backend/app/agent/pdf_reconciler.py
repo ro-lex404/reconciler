@@ -153,9 +153,11 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
             }
         }
 
-    data_dir = default_finance_data_dir()
-    bk_file = (data_dir / "bank_statement.csv").resolve().as_posix()
-    rp_file = (data_dir / "razorpay_settlements.csv").resolve().as_posix()
+    filename = state.get("filename", "")
+    from app.services.reconciliation import resolve_finance_dataset_paths
+    rp_path, bk_path = resolve_finance_dataset_paths(hint_filename=filename)
+    bk_file = bk_path.resolve().as_posix()
+    rp_file = rp_path.resolve().as_posix()
 
     con = duckdb.connect()
 

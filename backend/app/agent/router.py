@@ -197,10 +197,14 @@ def synthesizer_node(state: AgentState):
     sources = state.get("sources", [])
     question = state["question"]
 
-    # Always ensure baseline settlement datasets are cited if reconciliation context is present
-    if reconciliation_context and not any(s.get("name") == "razorpay_settlements.csv" for s in sources):
-        sources.append({"type": "sql", "name": "razorpay_settlements.csv", "engine": "DuckDB SQL Engine"})
-        sources.append({"type": "sql", "name": "bank_statement.csv", "engine": "DuckDB SQL Engine"})
+    # Ensure active monthly settlement datasets are cited if reconciliation context is present
+    if reconciliation_context:
+        m_tag = "august" if ("aug" in question.lower() or "aug" in reconciliation_context.lower()) else "july"
+        rp_name = f"razorpay_settlements_{m_tag}.csv"
+        bk_name = f"bank_statement_{m_tag}.csv"
+        if not any(s.get("name") == rp_name for s in sources):
+            sources.append({"type": "sql", "name": rp_name, "engine": "DuckDB SQL Engine"})
+            sources.append({"type": "sql", "name": bk_name, "engine": "DuckDB SQL Engine"})
 
     groq_api_key = os.getenv("GROQ_API_KEY", "").strip()
 
