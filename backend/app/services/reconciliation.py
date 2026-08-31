@@ -8,8 +8,17 @@ import duckdb
 
 
 def default_finance_data_dir() -> Path:
-    local_dir = Path(__file__).resolve().parents[3] / "razorpay-reconciler" / "data"
-    return Path(os.getenv("FINANCE_DATA_DIR", str(local_dir)))
+    if os.getenv("FINANCE_DATA_DIR"):
+        return Path(os.getenv("FINANCE_DATA_DIR"))
+
+    # Check data/july in root repository
+    root_dir = Path(__file__).resolve().parents[2]
+    july_dir = root_dir / "data" / "july"
+    if july_dir.exists() and (july_dir / "bank_statement.csv").exists():
+        return july_dir
+
+    fallback = Path(__file__).resolve().parents[3] / "razorpay-reconciler" / "data"
+    return fallback
 
 
 def reconcile_settlements(
