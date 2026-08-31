@@ -3,7 +3,10 @@ from celery import Celery
 from langchain_community.document_loaders import CSVLoader
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
+try:
+    from langchain_huggingface import HuggingFaceEmbeddings
+except Exception:
+    from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import PGVector
 
 # ==========================================

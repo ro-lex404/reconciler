@@ -12,6 +12,7 @@ from app.services.reconciliation import (
     reconcile_settlements,
     verify_reconciliation_integrity,
     get_reconciliation_context_summary,
+    resolve_finance_dataset_paths,
 )
 
 # Import the Celery worker task and compiled LangGraph workflow
@@ -130,18 +131,18 @@ async def chat_endpoint(request: ChatRequest):
 @app.post("/finance/reconcile")
 async def finance_reconciliation(request: ReconciliationRequest):
     """Reconcile a settlement batch and return measurable exceptions."""
-    data_dir = default_finance_data_dir()
-    razorpay_path = request.razorpay_path or str(data_dir / "razorpay_settlements.csv")
-    bank_path = request.bank_path or str(data_dir / "bank_statement.csv")
-    return reconcile_settlements(razorpay_path, bank_path)
+    if request.razorpay_path and request.bank_path:
+        rp_path, bk_path = request.razorpay_path, request.bank_path
+    else:
+        rp_file, bk_file = resolve_finance_dataset_paths()
+        rp_path, bk_path = str(rp_file), str(bk_file)
+    return reconcile_settlements(rp_path, bk_path)
 
 # Verification endpoint to check for duplicates across match sets
 @app.get("/finance/verify")
 def verify_no_duplicates():
-    data_dir = default_finance_data_dir()
-    razorpay_path = str(data_dir / "razorpay_settlements.csv")
-    bank_path = str(data_dir / "bank_statement.csv")
-    return verify_reconciliation_integrity(razorpay_path, bank_path)
+    rp_file, bk_file = resolve_finance_dataset_paths()
+    return verify_reconciliation_integrity(str(rp_file), str(bk_file))
 
 
 from app.agent.pdf_reconciler import pdf_reconciler_graph

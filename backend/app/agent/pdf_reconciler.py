@@ -259,13 +259,14 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
             "exception_count": len(exceptions),
             "matches": matches,
             "exceptions": exceptions,
+            "source_dataset": f"{rp_path.name} & {bk_path.name}",
             "engine": "DuckDB SQL Vectorized Engine",
         }
     }
 
     try:
         from app.services.reconciliation import update_latest_pdf_reconciliation
-        update_latest_pdf_reconciliation(results)
+        update_latest_pdf_reconciliation({"filename": filename, **results["reconciliation_results"]})
     except Exception:
         pass
 

@@ -45,6 +45,7 @@ interface ReconciliationData {
   matched_count: number;
   exception_count: number;
   engine: string;
+  source_dataset?: string;
   matches: MatchRecord[];
   exceptions: ExceptionRecord[];
 }
@@ -317,10 +318,12 @@ export default function Home() {
                     <p className="text-xs text-blue-600 mt-1">Invoice-vs-Bank Verification</p>
                   </div>
                   <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Engine Status</p>
-                    <p className="text-xs font-bold text-gray-800 mt-2">{pdfResult.reconciliation.engine}</p>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Reconciled Against</p>
+                    <p className="text-xs font-mono font-bold text-blue-700 mt-2 truncate" title={pdfResult.reconciliation.source_dataset}>
+                      📊 {pdfResult.reconciliation.source_dataset || 'Auto-matched Month'}
+                    </p>
                     <span className="inline-block mt-2 px-2.5 py-1 text-xs font-bold bg-blue-100 text-blue-800 rounded-full">
-                      LangGraph Pipeline
+                      DuckDB + LangGraph
                     </span>
                   </div>
                 </div>
