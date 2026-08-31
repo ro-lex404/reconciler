@@ -33,6 +33,7 @@ class AgentState(TypedDict):
     reconciliation_context: str
     sql_result: str
     rag_context: str
+    sources: list[dict]
     final_answer: str
 
 class RouteDecision(BaseModel):
@@ -78,16 +79,18 @@ def router_node(state: AgentState):
 
 
 def sql_node(state: AgentState):
-    """Generates SQL, executes it via DuckDB, and returns the result."""
+    """Generates SQL, executes it via DuckDB, and returns the result with source metadata."""
     print("--- ROUTED TO SQL ENGINE ---")
     
     upload_dir = "/app/uploads"
     list_of_csvs = glob.glob(os.path.join(upload_dir, "*.csv"))
     
     if not list_of_csvs:
-        return {"sql_result": "No dynamic CSV files found in upload directory."}
+        return {"sql_result": "No dynamic CSV files found in upload directory.", "sources": []}
         
     csv_file_path = max(list_of_csvs, key=os.path.getctime)
+    csv_name = os.path.basename(csv_file_path)
+    sources = [{"type": "sql", "name": csv_name, "engine": "DuckDB SQL Engine"}]
     
     try:
         con = duckdb.connect(database=':memory:')
@@ -98,11 +101,11 @@ def sql_node(state: AgentState):
         for _, row in schema_df.iterrows():
             table_schema += f"- {row['column_name']} ({row['column_type']})\n"
     except Exception as e:
-        return {"sql_result": f"Error reading CSV schema: {str(e)}"}
+        return {"sql_result": f"Error reading CSV schema: {str(e)}", "sources": sources}
 
     groq_api_key = os.getenv("GROQ_API_KEY", "").strip()
     if not groq_api_key:
-        return {"sql_result": "Groq API key not set for dynamic text-to-sql generation."}
+        return {"sql_result": "Groq API key not set for dynamic text-to-sql generation.", "sources": sources}
 
     system_prompt = """You are a DuckDB SQL expert. 
     Your job is to write a SQL query that answers the user's question.
@@ -134,15 +137,16 @@ def sql_node(state: AgentState):
         
         generated_sql = llm_response.sql_query
         execution_result = execute_text_to_sql(csv_file_path, generated_sql)
-        return {"sql_result": str(execution_result)}
+        return {"sql_result": str(execution_result), "sources": sources}
     except Exception as e:
-        return {"sql_result": f"SQL generation warning: {str(e)}"}
+        return {"sql_result": f"SQL generation warning: {str(e)}", "sources": sources}
 
 
 def rag_node(state: AgentState):
-    """Searches PostgreSQL for relevant document chunks."""
+    """Searches PostgreSQL for relevant document chunks and extracts source citations."""
     print("--- RETRIEVING DOCUMENT CONTEXT ---")
     question = state["question"]
+    sources = []
     
     try:
         vectorstore = PGVector(
@@ -155,26 +159,48 @@ def rag_node(state: AgentState):
         rag_context = "\n\n---\n\n".join([doc.page_content for doc in docs])
         if not rag_context:
             rag_context = "No relevant documents found in PGVector store."
-        return {"rag_context": rag_context}
+
+        seen = set()
+        for doc in docs:
+            file_name = doc.metadata.get("source_file", "Document")
+            page_num = doc.metadata.get("page_number", 1)
+            key = f"{file_name}:{page_num}"
+            if key not in seen:
+                seen.add(key)
+                sources.append({
+                    "type": "document",
+                    "name": file_name,
+                    "page": page_num,
+                    "snippet": doc.page_content[:120] + "..." if len(doc.page_content) > 120 else doc.page_content
+                })
+
+        return {"rag_context": rag_context, "sources": sources}
     except Exception as e:
-        return {"rag_context": f"PGVector store notice: {str(e)}"}
+        return {"rag_context": f"PGVector store notice: {str(e)}", "sources": []}
 
 
 def both_node(state: AgentState):
-    """Runs SQL + RAG collection in one node so synthesis executes exactly once."""
+    """Runs SQL + RAG collection in one node and combines source citations."""
     sql_output = sql_node(state)
     rag_output = rag_node(state)
-    return {**sql_output, **rag_output}
+    combined_sources = sql_output.get("sources", []) + rag_output.get("sources", [])
+    return {**sql_output, **rag_output, "sources": combined_sources}
 
 
 def synthesizer_node(state: AgentState):
-    """Combines live reconciliation metrics, DuckDB SQL results, and RAG document context into a final executive answer."""
+    """Combines live reconciliation metrics, DuckDB SQL results, and RAG document context into a final executive answer with sources."""
     print("--- SYNTHESIZING FINAL ANSWER ---")
 
     sql_data = state.get("sql_result", "")
     rag_data = state.get("rag_context", "")
     reconciliation_context = state.get("reconciliation_context", "")
+    sources = state.get("sources", [])
     question = state["question"]
+
+    # Always ensure baseline settlement datasets are cited if reconciliation context is present
+    if reconciliation_context and not any(s.get("name") == "razorpay_settlements.csv" for s in sources):
+        sources.append({"type": "sql", "name": "razorpay_settlements.csv", "engine": "DuckDB SQL Engine"})
+        sources.append({"type": "sql", "name": "bank_statement.csv", "engine": "DuckDB SQL Engine"})
 
     groq_api_key = os.getenv("GROQ_API_KEY", "").strip()
 
@@ -210,12 +236,12 @@ CRITICAL RULES:
                 [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)],
                 config={"tags": ["final_node"]}
             )
-            return {"final_answer": response.content}
+            return {"final_answer": response.content, "sources": sources}
         except Exception as e:
             print(f"Synthesizer LLM warning: {e}")
 
     # Fallback response formatting if GROQ_API_KEY is not configured
-    return {"final_answer": f"### AI Finance Controller Audit Response\n\n**Question:** {question}\n\n**Live Reconciliation Data:**\n\n{reconciliation_context}"}
+    return {"final_answer": f"### AI Finance Controller Audit Response\n\n**Question:** {question}\n\n**Live Reconciliation Data:**\n\n{reconciliation_context}", "sources": sources}
 
 
 # ==========================================

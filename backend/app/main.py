@@ -123,7 +123,8 @@ async def chat_endpoint(request: ChatRequest):
     final_state = await agent_app.ainvoke(inputs)
     final_answer = final_state.get("final_answer", "")
     normalized_answer = normalize_final_answer(final_answer)
-    return JSONResponse({"answer": normalized_answer})
+    sources = final_state.get("sources", [])
+    return JSONResponse({"answer": normalized_answer, "sources": sources})
 
 
 @app.post("/finance/reconcile")

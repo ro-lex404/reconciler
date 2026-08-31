@@ -56,11 +56,25 @@ interface ExtractPDFResponse {
   reconciliation: ReconciliationData;
 }
 
+interface SourceItem {
+  type?: string;
+  name: string;
+  page?: number;
+  engine?: string;
+  snippet?: string;
+}
+
+interface ChatMessage {
+  role: 'user' | 'ai';
+  content: string;
+  sources?: SourceItem[];
+}
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'chat' | 'reconciliation'>('reconciliation');
 
   // --- RAG Chat State ---
-  const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [kbFile, setKbFile] = useState<File | null>(null);
   const [uploadStatus, setUploadStatus] = useState('');
@@ -116,10 +130,12 @@ export default function Home() {
 
       const data = await res.json();
       const answer = typeof data?.answer === 'string' ? data.answer : 'No response returned.';
+      const sources: SourceItem[] = Array.isArray(data?.sources) ? data.sources : [];
 
       setMessages((prev) => {
         const updated = [...prev];
         updated[updated.length - 1].content = answer;
+        updated[updated.length - 1].sources = sources;
         return updated;
       });
     } catch (err) {
@@ -453,6 +469,27 @@ export default function Home() {
                       >
                         {formatMessageForMarkdown(msg.content)}
                       </ReactMarkdown>
+
+                      {/* Interactive Source Attribution Chips */}
+                      {msg.role === 'ai' && msg.sources && msg.sources.length > 0 && (
+                        <div className="mt-3 pt-2.5 border-t border-gray-200">
+                          <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                            <span>📚 Sources & Evidence:</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {msg.sources.map((src, i) => (
+                              <span
+                                key={i}
+                                title={src.snippet || src.engine || src.name}
+                                className="inline-flex items-center gap-1 text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-md shadow-xs hover:bg-blue-100 transition cursor-help"
+                              >
+                                {src.type === 'document' ? '📄' : '📊'} {src.name}
+                                {src.page ? ` (p. ${src.page})` : ''}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
