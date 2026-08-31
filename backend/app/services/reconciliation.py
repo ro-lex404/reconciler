@@ -21,15 +21,32 @@ def reconcile_settlements(
 
     con = duckdb.connect()
 
-    # 1. Load CSVs directly into DuckDB tables using zero-copy scanning
+    # 1. Load CSVs directly into DuckDB tables with robust date normalization
     con.execute(f"""
         CREATE TABLE razorpay AS 
-        SELECT * FROM read_csv_auto('{rp_file}')
+        SELECT 
+            *,
+            COALESCE(
+                TRY_CAST(date AS DATE),
+                TRY_STRPTIME(date::VARCHAR, '%d-%m-%Y'),
+                TRY_STRPTIME(date::VARCHAR, '%d/%m/%Y'),
+                TRY_STRPTIME(date::VARCHAR, '%Y/%m/%d'),
+                TRY_STRPTIME(date::VARCHAR, '%Y-%m-%d')
+            ) as clean_date
+        FROM read_csv_auto('{rp_file}')
     """)
 
     con.execute(f"""
         CREATE TABLE bank AS 
-        SELECT *,
+        SELECT 
+            *,
+            COALESCE(
+                TRY_CAST(value_date AS DATE),
+                TRY_STRPTIME(value_date::VARCHAR, '%d-%m-%Y'),
+                TRY_STRPTIME(value_date::VARCHAR, '%d/%m/%Y'),
+                TRY_STRPTIME(value_date::VARCHAR, '%Y/%m/%d'),
+                TRY_STRPTIME(value_date::VARCHAR, '%Y-%m-%d')
+            ) as clean_date,
             COALESCE(REGEXP_EXTRACT(description, 'RZRPY/(REF[0-9]+)', 1), '') as merchant_ref
         FROM read_csv_auto('{bk_file}')
     """)
@@ -41,16 +58,16 @@ def reconcile_settlements(
             r.payment_id,
             r.merchant_ref,
             r.amount as razorpay_amount,
-            r.date::VARCHAR as razorpay_date,
+            strftime(r.clean_date, '%Y-%m-%d') as razorpay_date,
             b.credit_amount as bank_amount,
-            b.value_date::DATE::VARCHAR as bank_date,
+            strftime(b.clean_date, '%Y-%m-%d') as bank_date,
             'EXACT' as match_type,
             1.00 as confidence,
             'Exact match on amount and reference ID' as explanation
         FROM razorpay r
         JOIN bank b ON r.merchant_ref = b.merchant_ref
         WHERE ABS(r.amount - b.credit_amount) < 0.01
-          AND r.date::DATE = b.value_date::DATE
+          AND r.clean_date = b.clean_date
     """)
 
     # 3. Pass 2 — Fuzzy Matches (Amount within ₹5.00, date within 2 days)
@@ -60,9 +77,9 @@ def reconcile_settlements(
             r.payment_id,
             r.merchant_ref,
             r.amount as razorpay_amount,
-            r.date::VARCHAR as razorpay_date,
+            strftime(r.clean_date, '%Y-%m-%d') as razorpay_date,
             b.credit_amount as bank_amount,
-            b.value_date::DATE::VARCHAR as bank_date,
+            strftime(b.clean_date, '%Y-%m-%d') as bank_date,
             'FUZZY' as match_type,
             CASE 
                 WHEN ABS(r.amount - b.credit_amount) < 1.0 THEN 0.85
@@ -73,14 +90,14 @@ def reconcile_settlements(
                 'Fuzzy match: amount delta ₹',
                 ROUND(ABS(r.amount - b.credit_amount), 2),
                 ', date delta ',
-                ABS(DATEDIFF('day', r.date::DATE, b.value_date::DATE)),
+                ABS(DATEDIFF('day', r.clean_date, b.clean_date)),
                 ' day(s)'
             ) as explanation
         FROM razorpay r
         JOIN bank b ON r.merchant_ref = b.merchant_ref
         WHERE r.payment_id NOT IN (SELECT payment_id FROM exact_matches)
           AND ABS(r.amount - b.credit_amount) <= 5.0
-          AND ABS(DATEDIFF('day', r.date::DATE, b.value_date::DATE)) <= 2
+          AND ABS(DATEDIFF('day', r.clean_date, b.clean_date)) <= 2
     """)
 
     # 4. Pass 3 — Categorized Exceptions
@@ -91,7 +108,7 @@ def reconcile_settlements(
             r.payment_id,
             r.merchant_ref,
             r.amount,
-            r.date::VARCHAR as date,
+            strftime(r.clean_date, '%Y-%m-%d') as date,
             'missing_bank_entry' as type,
             'HIGH' as severity,
             'Check bank portal for delayed NEFT settlement (T+1 window)' as recommended_action
@@ -106,9 +123,9 @@ def reconcile_settlements(
             r.payment_id,
             r.merchant_ref,
             r.amount,
-            r.date::VARCHAR as date,
+            strftime(r.clean_date, '%Y-%m-%d') as date,
             CASE
-                WHEN ABS(r.amount - b.credit_amount) >= 0.01 AND r.date::DATE != b.value_date::DATE THEN 'amount_and_date_mismatch'
+                WHEN ABS(r.amount - b.credit_amount) >= 0.01 AND r.clean_date != b.clean_date THEN 'amount_and_date_mismatch'
                 WHEN ABS(r.amount - b.credit_amount) >= 0.01 THEN 'amount_mismatch'
                 ELSE 'date_mismatch'
             END as type,
@@ -130,7 +147,7 @@ def reconcile_settlements(
             NULL as payment_id,
             b.merchant_ref,
             b.credit_amount as amount,
-            b.value_date::DATE::VARCHAR as date,
+            strftime(b.clean_date, '%Y-%m-%d') as date,
             'ghost_credit' as type,
             'HIGH' as severity,
             'Flag for compliance review — credit with no Razorpay record' as recommended_action

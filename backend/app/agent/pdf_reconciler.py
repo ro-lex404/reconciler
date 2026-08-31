@@ -163,17 +163,53 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
     pdf_df = pd.DataFrame(records)
     con.register("pdf_invoices", pdf_df)
 
-    # Load Bank Statement
+    # Load Bank Statement with robust multi-format date parsing
     con.execute(f"""
         CREATE TABLE bank AS 
-        SELECT *, COALESCE(REGEXP_EXTRACT(description, 'RZRPY/(REF[0-9]+)', 1), '') as merchant_ref 
+        SELECT 
+            *,
+            strftime(COALESCE(
+                TRY_CAST(value_date AS DATE),
+                TRY_STRPTIME(value_date::VARCHAR, '%d-%m-%Y'),
+                TRY_STRPTIME(value_date::VARCHAR, '%d/%m/%Y'),
+                TRY_STRPTIME(value_date::VARCHAR, '%Y/%m/%d'),
+                TRY_STRPTIME(value_date::VARCHAR, '%Y-%m-%d')
+            ), '%Y-%m-%d') as clean_bank_date,
+            COALESCE(REGEXP_EXTRACT(description, 'RZRPY/(REF[0-9]+)', 1), '') as merchant_ref 
         FROM read_csv_auto('{bk_file}')
     """)
 
     # Load Razorpay Settlements
     con.execute(f"""
         CREATE TABLE razorpay AS 
-        SELECT * FROM read_csv_auto('{rp_file}')
+        SELECT 
+            *,
+            strftime(COALESCE(
+                TRY_CAST(date AS DATE),
+                TRY_STRPTIME(date::VARCHAR, '%d-%m-%Y'),
+                TRY_STRPTIME(date::VARCHAR, '%d/%m/%Y'),
+                TRY_STRPTIME(date::VARCHAR, '%Y/%m/%d'),
+                TRY_STRPTIME(date::VARCHAR, '%Y-%m-%d')
+            ), '%Y-%m-%d') as clean_rp_date
+        FROM read_csv_auto('{rp_file}')
+    """)
+
+    # Clean PDF Invoices date
+    con.execute("""
+        CREATE TABLE clean_pdf_invoices AS
+        SELECT 
+            ref,
+            amount,
+            strftime(COALESCE(
+                TRY_CAST(date AS DATE),
+                TRY_STRPTIME(date::VARCHAR, '%d-%m-%Y'),
+                TRY_STRPTIME(date::VARCHAR, '%d/%m/%Y'),
+                TRY_STRPTIME(date::VARCHAR, '%Y/%m/%d'),
+                TRY_STRPTIME(date::VARCHAR, '%Y-%m-%d')
+            ), '%Y-%m-%d') as invoice_date,
+            COALESCE(description, '') as description,
+            COALESCE(status, 'PAID') as status
+        FROM pdf_invoices
     """)
 
     # Match PDF Invoices against Bank Statement
@@ -181,18 +217,18 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
         SELECT 
             p.ref as invoice_ref,
             p.amount as invoice_amount,
-            p.date as invoice_date,
+            p.invoice_date as invoice_date,
             b.credit_amount as bank_amount,
-            b.value_date::DATE::VARCHAR as bank_date,
+            b.clean_bank_date as bank_date,
             CASE 
-                WHEN ABS(p.amount - b.credit_amount) < 0.01 AND p.date = b.value_date::DATE::VARCHAR THEN 'EXACT'
+                WHEN ABS(p.amount - b.credit_amount) < 0.01 AND p.invoice_date = b.clean_bank_date THEN 'EXACT'
                 ELSE 'FUZZY'
             END as match_type,
             CASE 
-                WHEN ABS(p.amount - b.credit_amount) < 0.01 AND p.date = b.value_date::DATE::VARCHAR THEN 1.00
+                WHEN ABS(p.amount - b.credit_amount) < 0.01 AND p.invoice_date = b.clean_bank_date THEN 1.00
                 ELSE 0.85
             END as confidence
-        FROM pdf_invoices p
+        FROM clean_pdf_invoices p
         JOIN bank b ON p.ref = b.merchant_ref
         WHERE ABS(p.amount - b.credit_amount) <= 5.0
     """).df()
@@ -202,11 +238,11 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
         SELECT 
             p.ref as invoice_ref,
             p.amount as invoice_amount,
-            p.date as invoice_date,
+            p.invoice_date as invoice_date,
             'unmatched_pdf_invoice' as exception_type,
             'HIGH' as severity,
             'Verify if invoice payout was delayed or omitted from bank settlement' as recommended_action
-        FROM pdf_invoices p
+        FROM clean_pdf_invoices p
         LEFT JOIN bank b ON p.ref = b.merchant_ref AND b.merchant_ref != ''
         WHERE b.merchant_ref IS NULL
     """).df()
