@@ -88,28 +88,29 @@ def list_available_datasets() -> dict[str, Any]:
                         "path": f"{year_str}/{m}",
                     })
     
-    # 2. Check flat month directories for backwards compatibility (data/july/, data/august/)
-    flat_months = ["july", "august"]
-    for m in flat_months:
+    # 2. Check flat month directories for backwards compatibility
+    all_months = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
+    for m in all_months:
         # Check if not already added under 2026
         if not any(d["year"] == "2026" and d["month"] == m for d in datasets):
-            m_dir = root_data / m if (root_data / m).exists() else root_data
-            rp = list(m_dir.glob(f"*{m}*razorpay*.csv")) + list(m_dir.glob(f"razorpay_settlements_{m}.csv"))
-            bk = list(m_dir.glob(f"*{m}*bank*.csv")) + list(m_dir.glob(f"bank_statement_{m}.csv"))
-            inv = list(m_dir.glob(f"*{m}*invoice*.pdf")) + list(m_dir.glob(f"invoices_{m}.pdf"))
-            if rp or bk or inv:
-                datasets.append({
-                    "year": "2026",
-                    "month": m,
-                    "label": f"{m.capitalize()} 2026",
-                    "has_razorpay": len(rp) > 0,
-                    "has_bank": len(bk) > 0,
-                    "has_invoices": len(inv) > 0,
-                    "razorpay_file": rp[0].name if rp else None,
-                    "bank_file": bk[0].name if bk else None,
-                    "invoice_file": inv[0].name if inv else None,
-                    "path": f"2026/{m}",
-                })
+            m_dir = root_data / m if (root_data / m).exists() else None
+            if m_dir and m_dir.exists() and m_dir.is_dir():
+                rp = list(m_dir.glob(f"*{m}*razorpay*.csv")) + list(m_dir.glob(f"razorpay_settlements_{m}.csv")) + list(m_dir.glob("*razorpay*.csv"))
+                bk = list(m_dir.glob(f"*{m}*bank*.csv")) + list(m_dir.glob(f"bank_statement_{m}.csv")) + list(m_dir.glob("*bank*.csv"))
+                inv = list(m_dir.glob(f"*{m}*invoice*.pdf")) + list(m_dir.glob(f"invoices_{m}.pdf")) + list(m_dir.glob("*.pdf"))
+                if rp or bk or inv:
+                    datasets.append({
+                        "year": "2026",
+                        "month": m,
+                        "label": f"{m.capitalize()} 2026",
+                        "has_razorpay": len(rp) > 0,
+                        "has_bank": len(bk) > 0,
+                        "has_invoices": len(inv) > 0,
+                        "razorpay_file": rp[0].name if rp else None,
+                        "bank_file": bk[0].name if bk else None,
+                        "invoice_file": inv[0].name if inv else None,
+                        "path": f"2026/{m}",
+                    })
             
     return {
         "active_year": _ACTIVE_YEAR,

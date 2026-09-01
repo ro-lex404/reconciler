@@ -180,6 +180,50 @@ Document Text:
 def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
     """Ingests extracted PDF records into DuckDB and relationally reconciles against Bank Statement."""
     records = state.get("extracted_records", [])
+    filename = state.get("filename", "")
+
+    # Universal Month and Year Detection across all 12 months
+    MONTH_LOOKUP = {
+        "01": "january", "1": "january", "jan": "january", "january": "january",
+        "02": "february", "2": "february", "feb": "february", "february": "february",
+        "03": "march", "3": "march", "mar": "march", "march": "march",
+        "04": "april", "4": "april", "apr": "april", "april": "april",
+        "05": "may", "5": "may", "may": "may",
+        "06": "june", "6": "june", "jun": "june", "june": "june",
+        "07": "july", "7": "july", "jul": "july", "july": "july",
+        "08": "august", "8": "august", "aug": "august", "august": "august",
+        "09": "september", "9": "september", "sep": "september", "september": "september",
+        "10": "october", "oct": "october", "october": "october",
+        "11": "november", "nov": "november", "november": "november",
+        "12": "december", "dec": "december", "december": "december",
+    }
+
+    detected_month = "july"
+    detected_year = "2026"
+
+    if filename:
+        fn_lower = filename.lower()
+        for k, m_val in MONTH_LOOKUP.items():
+            if len(k) >= 3 and k in fn_lower:
+                detected_month = m_val
+                break
+        m_yr = re.search(r"(202\d)", fn_lower)
+        if m_yr:
+            detected_year = m_yr.group(1)
+
+    dates = [str(r.get("date", "")) for r in records if r.get("date")]
+    for d in dates:
+        m_d = re.search(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})", d)
+        if m_d:
+            detected_year = m_d.group(1)
+            m_num = m_d.group(2).zfill(2)
+            if m_num in MONTH_LOOKUP:
+                detected_month = MONTH_LOOKUP[m_num]
+                break
+
+    from app.services.reconciliation import resolve_finance_dataset_paths, set_active_period
+    set_active_period(detected_year, detected_month)
+
     if not records:
         return {
             "reconciliation_results": {
@@ -187,33 +231,10 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
                 "matched_count": 0,
                 "matches": [],
                 "exceptions": [],
+                "detected_year": detected_year,
+                "detected_month": detected_month,
             }
         }
-
-    filename = state.get("filename", "")
-    
-    # Auto-detect period from extracted invoice dates or filename
-    detected_month = "july"
-    detected_year = "2026"
-    dates = [str(r.get("date", "")) for r in records if r.get("date")]
-    if any("-08-" in d or "/08/" in d for d in dates):
-        detected_month = "august"
-    elif any("-07-" in d or "/07/" in d for d in dates):
-        detected_month = "july"
-    elif filename:
-        if "aug" in filename.lower():
-            detected_month = "august"
-        elif "jul" in filename.lower():
-            detected_month = "july"
-
-    for d in dates:
-        m_yr = re.search(r"(202\d)", d)
-        if m_yr:
-            detected_year = m_yr.group(1)
-            break
-
-    from app.services.reconciliation import resolve_finance_dataset_paths, set_active_period
-    set_active_period(detected_year, detected_month)
     rp_path, bk_path = resolve_finance_dataset_paths(hint_filename=detected_month)
     bk_file = bk_path.resolve().as_posix()
     rp_file = rp_path.resolve().as_posix()
@@ -267,9 +288,7 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
                 TRY_STRPTIME(date::VARCHAR, '%d/%m/%Y'),
                 TRY_STRPTIME(date::VARCHAR, '%Y/%m/%d'),
                 TRY_STRPTIME(date::VARCHAR, '%Y-%m-%d')
-            ), '%Y-%m-%d') as invoice_date,
-            COALESCE(description, '') as description,
-            COALESCE(status, 'PAID') as status
+            ), '%Y-%m-%d') as invoice_date
         FROM pdf_invoices
     """)
 
@@ -288,29 +307,40 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
             END as match_type,
             CASE 
                 WHEN ABS(p.amount - b.credit_amount) < 0.01 AND p.invoice_date = b.clean_bank_date THEN 1.00
-                ELSE 0.85
+                ELSE 0.88
             END as confidence
         FROM clean_pdf_invoices p
         JOIN bank b ON p.ref = b.merchant_ref
         WHERE ABS(p.amount - b.credit_amount) <= 5.0
     """)
 
-    # 2. Many-to-One Lump Sum Matches (2 invoices -> 1 lump sum bank credit)
+    # 2. Distinct Many-to-One Lump Sum Matches (2 invoices -> 1 lump sum bank credit)
     con.execute("""
-        CREATE TABLE many_to_one_pdf_matches AS
+        CREATE TABLE raw_many_to_one AS
         SELECT
+            p1.ref as p1_ref,
+            p2.ref as p2_ref,
             p1.ref || ' + ' || p2.ref as invoice_ref,
             p1.amount + p2.amount as invoice_amount,
             p1.invoice_date as invoice_date,
             b.credit_amount as bank_amount,
             b.clean_bank_date as bank_date,
             'MANY_TO_ONE' as match_type,
-            0.92 as confidence
+            0.92 as confidence,
+            ROW_NUMBER() OVER (PARTITION BY p1.ref ORDER BY ABS((p1.amount + p2.amount) - b.credit_amount)) as rn1,
+            ROW_NUMBER() OVER (PARTITION BY p2.ref ORDER BY ABS((p1.amount + p2.amount) - b.credit_amount)) as rn2
         FROM clean_pdf_invoices p1
         JOIN clean_pdf_invoices p2 ON p1.ref < p2.ref
         JOIN bank b ON ABS((p1.amount + p2.amount) - b.credit_amount) <= 1.0
         WHERE p1.ref NOT IN (SELECT invoice_ref FROM single_matches)
           AND p2.ref NOT IN (SELECT invoice_ref FROM single_matches)
+    """)
+
+    con.execute("""
+        CREATE TABLE many_to_one_pdf_matches AS
+        SELECT invoice_ref, invoice_amount, invoice_date, bank_amount, bank_date, match_type, confidence
+        FROM raw_many_to_one
+        WHERE rn1 = 1 AND rn2 = 1
     """)
 
     matches_df = con.execute("""
@@ -319,22 +349,48 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
         SELECT * FROM many_to_one_pdf_matches
     """).df()
 
-    # Unmatched PDF invoices (Exceptions)
-    exceptions_df = con.execute("""
+    # 3. Comprehensive & Precise Exceptions Catching 100% of Non-Matched Records
+    con.execute("""
+        CREATE TABLE exceptions AS
+        -- Type A: Missing Bank Entry (Invoice never cleared in bank statement)
         SELECT 
             p.ref as invoice_ref,
             p.amount as invoice_amount,
             p.invoice_date as invoice_date,
-            'unmatched_pdf_invoice' as exception_type,
+            'missing_bank_entry' as exception_type,
             'HIGH' as severity,
-            'Verify if invoice payout was delayed or omitted from bank settlement' as recommended_action
+            'No matching credit found in bank statement; verify if payout was delayed (T+1) or dropped by gateway' as recommended_action
         FROM clean_pdf_invoices p
         LEFT JOIN bank b ON p.ref = b.merchant_ref AND b.merchant_ref != ''
         WHERE b.merchant_ref IS NULL
           AND p.ref NOT IN (SELECT invoice_ref FROM single_matches)
           AND p.ref NOT IN (SELECT SPLIT_PART(invoice_ref, ' + ', 1) FROM many_to_one_pdf_matches)
           AND p.ref NOT IN (SELECT SPLIT_PART(invoice_ref, ' + ', 2) FROM many_to_one_pdf_matches)
-    """).df()
+
+        UNION ALL
+
+        -- Type B: Amount Mismatch (Invoice found in bank statement, but payout differs by > ₹5.00)
+        SELECT
+            p.ref as invoice_ref,
+            p.amount as invoice_amount,
+            p.invoice_date as invoice_date,
+            'amount_mismatch' as exception_type,
+            'HIGH' as severity,
+            CONCAT('Bank credited ₹', b.credit_amount, ' vs Invoice ₹', p.amount, ' (₹', ROUND(ABS(p.amount - b.credit_amount), 2), ' variance); verify MDR fee deduction or GST dispute hold') as recommended_action
+        FROM clean_pdf_invoices p
+        JOIN bank b ON p.ref = b.merchant_ref
+        WHERE ABS(p.amount - b.credit_amount) > 5.0
+          AND p.ref NOT IN (SELECT invoice_ref FROM single_matches)
+          AND p.ref NOT IN (SELECT SPLIT_PART(invoice_ref, ' + ', 1) FROM many_to_one_pdf_matches)
+          AND p.ref NOT IN (SELECT SPLIT_PART(invoice_ref, ' + ', 2) FROM many_to_one_pdf_matches)
+    """)
+
+    exceptions_df = con.execute("SELECT * FROM exceptions").df()
+
+    single_count = len(con.execute("SELECT * FROM single_matches").df())
+    mto_df = con.execute("SELECT * FROM many_to_one_pdf_matches").df()
+    mto_invoices_count = len(mto_df) * 2
+    total_invoices_matched = single_count + mto_invoices_count
 
     matches = matches_df.to_dict(orient="records")
     exceptions = exceptions_df.to_dict(orient="records")
@@ -342,7 +398,7 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
     results = {
         "reconciliation_results": {
             "pdf_records_extracted": len(records),
-            "matched_count": len(matches),
+            "matched_count": total_invoices_matched,
             "exception_count": len(exceptions),
             "matches": matches,
             "exceptions": exceptions,

@@ -555,15 +555,41 @@ export default function Home() {
                   {/* Current Active Dataset Badges */}
                   <div className="flex flex-wrap items-center gap-2 mt-3 text-xs">
                     <span className="text-slate-400">Active Period:</span>
-                    <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-md font-mono font-bold">
+                    <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-md font-mono font-bold capitalize">
                       📁 {selectedYear} / {activeMonth}
                     </span>
-                    <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md font-mono">
-                      ✓ bank_statement.csv
-                    </span>
-                    <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md font-mono">
-                      ✓ razorpay_settlements.csv
-                    </span>
+                    
+                    {(() => {
+                      const curDataset = availableDatasets.find(
+                        (d) => (d.year === selectedYear || (!d.year && selectedYear === '2026')) && d.month === activeMonth
+                      );
+                      const hasBank = curDataset?.has_bank;
+                      const hasRp = curDataset?.has_razorpay;
+
+                      return (
+                        <>
+                          {hasBank ? (
+                            <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md font-mono flex items-center gap-1">
+                              ✓ {curDataset?.bank_file || 'bank_statement.csv'}
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-md font-mono flex items-center gap-1">
+                              ✗ bank_statement.csv (missing)
+                            </span>
+                          )}
+
+                          {hasRp ? (
+                            <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md font-mono flex items-center gap-1">
+                              ✓ {curDataset?.razorpay_file || 'razorpay_settlements.csv'}
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-md font-mono flex items-center gap-1">
+                              ✗ razorpay_settlements.csv (missing)
+                            </span>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
 
