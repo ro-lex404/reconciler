@@ -129,18 +129,37 @@ async def upload_file(file: UploadFile = File(...)):
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     from app.services.reconciliation import set_active_period, set_active_month
+    q_lower = request.query.lower()
+    
+    # Universal Year detection
+    m_yr = re.search(r"(202\d)", q_lower)
+    parsed_year = m_yr.group(1) if m_yr else (request.year or "2026")
+    
+    # Universal Month detection
+    MONTH_MAP = {
+        "january": "january", "february": "february", "march": "march", "april": "april",
+        "may": "may", "june": "june", "july": "july", "august": "august",
+        "september": "september", "october": "october", "november": "november", "december": "december",
+        "jan": "january", "feb": "february", "mar": "march", "apr": "april",
+        "jun": "june", "jul": "july", "aug": "august", "sep": "september",
+        "oct": "october", "nov": "november", "dec": "december"
+    }
+    
+    parsed_month = None
     if request.month:
-        if request.year:
-            set_active_period(request.year, request.month)
-        else:
-            set_active_month(request.month)
-    elif any(m in request.query.lower() for m in ["august", "july", "september", "october", "november", "december", "january", "february", "march", "april", "may", "june"]):
-        for m in ["august", "july", "september", "october", "november", "december", "january", "february", "march", "april", "may", "june"]:
-            if m in request.query.lower():
-                set_active_month(m)
+        parsed_month = request.month.lower().strip()
+    else:
+        for k, v in MONTH_MAP.items():
+            if re.search(r"\b" + k + r"\b", q_lower):
+                parsed_month = v
                 break
 
-    reconciliation_context = get_reconciliation_context_summary(hint_filename=request.month or request.query)
+    if parsed_month:
+        set_active_period(parsed_year, parsed_month)
+    elif request.year:
+        set_active_period(request.year, "july")
+
+    reconciliation_context = get_reconciliation_context_summary(hint_filename=parsed_month or request.query)
     inputs = {
         "question": request.query,
         "reconciliation_context": reconciliation_context,
@@ -247,6 +266,12 @@ async def upload_finance_dataset(
     else:
         set_active_period("2026", parts[0])
 
+    # Dispatch vector store embedding task to Celery in real time
+    try:
+        process_document_task.delay(str(dest_path), file.filename)
+    except Exception as e:
+        print(f"Celery vector store indexing notice: {e}")
+
     return {
         "status": "success",
         "filename": file.filename,
@@ -313,6 +338,18 @@ async def extract_and_reconcile_pdf(file: UploadFile = File(...)):
     """Extracts invoice records from uploaded PDF and reconciles against bank statements via LangGraph."""
     pdf_bytes = await file.read()
 
+    # Save uploaded PDF to ./uploads and trigger background vector indexing in real time
+    upload_dir = "./uploads"
+    os.makedirs(upload_dir, exist_ok=True)
+    temp_path = f"{upload_dir}/{file.filename}"
+    with open(temp_path, "wb") as f:
+        f.write(pdf_bytes)
+
+    try:
+        process_document_task.delay(temp_path, file.filename)
+    except Exception as e:
+        print(f"Celery vector store indexing notice: {e}")
+
     initial_state = {
         "pdf_bytes": pdf_bytes,
         "filename": file.filename,
@@ -322,6 +359,15 @@ async def extract_and_reconcile_pdf(file: UploadFile = File(...)):
     }
 
     final_state = await pdf_reconciler_graph.ainvoke(initial_state)
+
+    # Also update in-memory latest PDF reconciliation for immediate chat awareness
+    from app.services.reconciliation import update_latest_pdf_reconciliation
+    update_latest_pdf_reconciliation({
+        "filename": file.filename,
+        "source": file.filename,
+        "records": final_state.get("extracted_records", []),
+        "reconciliation_results": final_state.get("reconciliation_results", {}),
+    })
 
     return {
         "source": file.filename,

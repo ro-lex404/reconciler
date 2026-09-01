@@ -348,40 +348,65 @@ def reconcile_settlements(
     razorpay_path: str | Path,
     bank_path: str | Path,
 ) -> dict[str, Any]:
-    rp_file = Path(razorpay_path).resolve().as_posix()
-    bk_file = Path(bank_path).resolve().as_posix()
+    rp_p = Path(razorpay_path)
+    bk_p = Path(bank_path)
 
     con = duckdb.connect()
 
-    # 1. Load CSVs directly into DuckDB tables with robust date normalization
-    con.execute(f"""
-        CREATE TABLE razorpay AS 
-        SELECT 
-            *,
-            COALESCE(
-                TRY_CAST(date AS DATE),
-                TRY_STRPTIME(date::VARCHAR, '%d-%m-%Y'),
-                TRY_STRPTIME(date::VARCHAR, '%d/%m/%Y'),
-                TRY_STRPTIME(date::VARCHAR, '%Y/%m/%d'),
-                TRY_STRPTIME(date::VARCHAR, '%Y-%m-%d')
-            ) as clean_date
-        FROM read_csv_auto('{rp_file}')
-    """)
+    # 1. Load CSVs directly into DuckDB tables with robust date normalization and missing file tolerance
+    if not rp_p.exists() or not rp_p.is_file():
+        con.execute("""
+            CREATE TABLE razorpay (
+                payment_id VARCHAR,
+                merchant_ref VARCHAR,
+                amount DOUBLE,
+                date VARCHAR,
+                clean_date DATE
+            )
+        """)
+    else:
+        rp_file = rp_p.resolve().as_posix()
+        con.execute(f"""
+            CREATE TABLE razorpay AS 
+            SELECT 
+                *,
+                COALESCE(
+                    TRY_CAST(date AS DATE),
+                    TRY_STRPTIME(date::VARCHAR, '%d-%m-%Y'),
+                    TRY_STRPTIME(date::VARCHAR, '%d/%m/%Y'),
+                    TRY_STRPTIME(date::VARCHAR, '%Y/%m/%d'),
+                    TRY_STRPTIME(date::VARCHAR, '%Y-%m-%d')
+                ) as clean_date
+            FROM read_csv_auto('{rp_file}')
+        """)
 
-    con.execute(f"""
-        CREATE TABLE bank AS 
-        SELECT 
-            *,
-            COALESCE(
-                TRY_CAST(value_date AS DATE),
-                TRY_STRPTIME(value_date::VARCHAR, '%d-%m-%Y'),
-                TRY_STRPTIME(value_date::VARCHAR, '%d/%m/%Y'),
-                TRY_STRPTIME(value_date::VARCHAR, '%Y/%m/%d'),
-                TRY_STRPTIME(value_date::VARCHAR, '%Y-%m-%d')
-            ) as clean_date,
-            COALESCE(REGEXP_EXTRACT(description, 'RZRPY/(REF[0-9]+)', 1), '') as merchant_ref
-        FROM read_csv_auto('{bk_file}')
-    """)
+    if not bk_p.exists() or not bk_p.is_file():
+        con.execute("""
+            CREATE TABLE bank (
+                bank_ref VARCHAR,
+                credit_amount DOUBLE,
+                value_date VARCHAR,
+                description VARCHAR,
+                clean_date DATE,
+                merchant_ref VARCHAR
+            )
+        """)
+    else:
+        bk_file = bk_p.resolve().as_posix()
+        con.execute(f"""
+            CREATE TABLE bank AS 
+            SELECT 
+                *,
+                COALESCE(
+                    TRY_CAST(value_date AS DATE),
+                    TRY_STRPTIME(value_date::VARCHAR, '%d-%m-%Y'),
+                    TRY_STRPTIME(value_date::VARCHAR, '%d/%m/%Y'),
+                    TRY_STRPTIME(value_date::VARCHAR, '%Y/%m/%d'),
+                    TRY_STRPTIME(value_date::VARCHAR, '%Y-%m-%d')
+                ) as clean_date,
+                COALESCE(REGEXP_EXTRACT(description, 'RZRPY/(REF[0-9]+)', 1), '') as merchant_ref
+            FROM read_csv_auto('{bk_file}')
+        """)
 
     # 2. Pass 1 — Exact Matches (Amount delta < ₹0.01 AND same date)
     con.execute("""
@@ -434,8 +459,10 @@ def reconcile_settlements(
 
     # 4. Pass 2.5 — Many-to-One Matches (Lump-sum bank settlement paying multiple invoices)
     con.execute("""
-        CREATE TABLE many_to_one_matches AS
+        CREATE TABLE raw_many_to_one AS
         SELECT
+            r1.payment_id as r1_id,
+            r2.payment_id as r2_id,
             r1.payment_id || ' + ' || r2.payment_id as payment_id,
             r1.merchant_ref || ' + ' || r2.merchant_ref as merchant_ref,
             r1.amount + r2.amount as razorpay_amount,
@@ -444,7 +471,9 @@ def reconcile_settlements(
             strftime(b.clean_date, '%Y-%m-%d') as bank_date,
             'MANY_TO_ONE' as match_type,
             0.92 as confidence,
-            CONCAT('Many-to-one lump-sum batch settlement: combined 2 transactions (', r1.merchant_ref, ' ₹', r1.amount, ' + ', r2.merchant_ref, ' ₹', r2.amount, ')') as explanation
+            CONCAT('Many-to-one lump-sum batch settlement: combined 2 transactions (', r1.merchant_ref, ' ₹', r1.amount, ' + ', r2.merchant_ref, ' ₹', r2.amount, ')') as explanation,
+            ROW_NUMBER() OVER (PARTITION BY r1.payment_id ORDER BY ABS((r1.amount + r2.amount) - b.credit_amount)) as rn1,
+            ROW_NUMBER() OVER (PARTITION BY r2.payment_id ORDER BY ABS((r1.amount + r2.amount) - b.credit_amount)) as rn2
         FROM razorpay r1
         JOIN razorpay r2 ON r1.payment_id < r2.payment_id AND ABS(DATEDIFF('day', r1.clean_date, r2.clean_date)) <= 3
         JOIN bank b ON ABS((r1.amount + r2.amount) - b.credit_amount) <= 1.0 AND ABS(DATEDIFF('day', r1.clean_date, b.clean_date)) <= 3
@@ -454,7 +483,26 @@ def reconcile_settlements(
           AND r2.payment_id NOT IN (SELECT payment_id FROM fuzzy_matches)
     """)
 
-    # 5. Pass 3 — Categorized Exceptions
+    con.execute("""
+        CREATE TABLE many_to_one_matches AS
+        SELECT payment_id, merchant_ref, razorpay_amount, razorpay_date, bank_amount, bank_date, match_type, confidence, explanation
+        FROM raw_many_to_one
+        WHERE rn1 = 1 AND rn2 = 1
+    """)
+
+    # Matched IDs set to mathematically guarantee disjoint partition between matches and exceptions
+    con.execute("""
+        CREATE TABLE all_matched_payment_ids AS
+        SELECT payment_id FROM exact_matches
+        UNION ALL
+        SELECT payment_id FROM fuzzy_matches
+        UNION ALL
+        SELECT r1_id FROM raw_many_to_one WHERE rn1 = 1 AND rn2 = 1
+        UNION ALL
+        SELECT r2_id FROM raw_many_to_one WHERE rn1 = 1 AND rn2 = 1
+    """)
+
+    # 5. Pass 3 — Categorized Exceptions (Strictly mutually exclusive with matches)
     con.execute("""
         CREATE TABLE exceptions AS
         -- Missing bank entry (Razorpay payment with no matching bank reference)
@@ -463,14 +511,13 @@ def reconcile_settlements(
             r.merchant_ref,
             r.amount,
             strftime(r.clean_date, '%Y-%m-%d') as date,
-            'missing_bank_entry' as type,
+            'MISSING_BANK' as type,
             'HIGH' as severity,
             'Check bank portal for delayed NEFT settlement (T+1 window)' as recommended_action
         FROM razorpay r
         LEFT JOIN bank b ON r.merchant_ref = b.merchant_ref AND b.merchant_ref != ''
         WHERE b.merchant_ref IS NULL
-          AND r.payment_id NOT IN (SELECT payment_id FROM exact_matches)
-          AND r.payment_id NOT IN (SELECT payment_id FROM fuzzy_matches)
+          AND r.payment_id NOT IN (SELECT payment_id FROM all_matched_payment_ids)
         
         UNION ALL
         
@@ -481,19 +528,18 @@ def reconcile_settlements(
             r.amount,
             strftime(r.clean_date, '%Y-%m-%d') as date,
             CASE
-                WHEN ABS(r.amount - b.credit_amount) >= 0.01 AND r.clean_date != b.clean_date THEN 'amount_and_date_mismatch'
-                WHEN ABS(r.amount - b.credit_amount) >= 0.01 THEN 'amount_mismatch'
-                ELSE 'date_mismatch'
+                WHEN ABS(r.amount - b.credit_amount) > 1.0 THEN 'AMOUNT_MISMATCH'
+                WHEN ABS(DATEDIFF('day', r.clean_date, b.clean_date)) > 2 THEN 'DATE_MISMATCH'
+                ELSE 'AMOUNT_MISMATCH'
             END as type,
             'HIGH' as severity,
             CASE
-                WHEN ABS(r.amount - b.credit_amount) >= 0.01 THEN 'Verify GST rounding or gateway fee deduction with merchant'
+                WHEN ABS(r.amount - b.credit_amount) > 1.0 THEN CONCAT('Bank credited ₹', b.credit_amount, ' vs Gateway ₹', r.amount, ' (₹', ROUND(ABS(r.amount - b.credit_amount), 2), ' variance); verify MDR fee deduction')
                 ELSE 'Check settlement clearance window / weekend date shift'
             END as recommended_action
         FROM razorpay r
         JOIN bank b ON r.merchant_ref = b.merchant_ref
-        WHERE r.payment_id NOT IN (SELECT payment_id FROM exact_matches)
-          AND r.payment_id NOT IN (SELECT payment_id FROM fuzzy_matches)
+        WHERE r.payment_id NOT IN (SELECT payment_id FROM all_matched_payment_ids)
           AND b.merchant_ref != ''
         
         UNION ALL
@@ -504,7 +550,7 @@ def reconcile_settlements(
             b.merchant_ref,
             b.credit_amount as amount,
             strftime(b.clean_date, '%Y-%m-%d') as date,
-            'ghost_credit' as type,
+            'GHOST_CREDIT' as type,
             'HIGH' as severity,
             'Flag for compliance review — credit with no Razorpay record' as recommended_action
         FROM bank b

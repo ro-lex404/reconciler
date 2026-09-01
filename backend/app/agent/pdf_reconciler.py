@@ -276,10 +276,11 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
         FROM read_csv_auto('{rp_file}')
     """)
 
-    # Clean PDF Invoices date
+    # Clean PDF Invoices date with unique row identifier
     con.execute("""
         CREATE TABLE clean_pdf_invoices AS
         SELECT 
+            ROW_NUMBER() OVER () as invoice_id,
             ref,
             amount,
             strftime(COALESCE(
@@ -296,6 +297,7 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
     con.execute("""
         CREATE TABLE single_matches AS
         SELECT 
+            p.invoice_id,
             p.ref as invoice_ref,
             p.amount as invoice_amount,
             p.invoice_date as invoice_date,
@@ -318,6 +320,8 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
     con.execute("""
         CREATE TABLE raw_many_to_one AS
         SELECT
+            p1.invoice_id as p1_id,
+            p2.invoice_id as p2_id,
             p1.ref as p1_ref,
             p2.ref as p2_ref,
             p1.ref || ' + ' || p2.ref as invoice_ref,
@@ -327,13 +331,13 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
             b.clean_bank_date as bank_date,
             'MANY_TO_ONE' as match_type,
             0.92 as confidence,
-            ROW_NUMBER() OVER (PARTITION BY p1.ref ORDER BY ABS((p1.amount + p2.amount) - b.credit_amount)) as rn1,
-            ROW_NUMBER() OVER (PARTITION BY p2.ref ORDER BY ABS((p1.amount + p2.amount) - b.credit_amount)) as rn2
+            ROW_NUMBER() OVER (PARTITION BY p1.invoice_id ORDER BY ABS((p1.amount + p2.amount) - b.credit_amount)) as rn1,
+            ROW_NUMBER() OVER (PARTITION BY p2.invoice_id ORDER BY ABS((p1.amount + p2.amount) - b.credit_amount)) as rn2
         FROM clean_pdf_invoices p1
-        JOIN clean_pdf_invoices p2 ON p1.ref < p2.ref
+        JOIN clean_pdf_invoices p2 ON p1.invoice_id < p2.invoice_id
         JOIN bank b ON ABS((p1.amount + p2.amount) - b.credit_amount) <= 1.0
-        WHERE p1.ref NOT IN (SELECT invoice_ref FROM single_matches)
-          AND p2.ref NOT IN (SELECT invoice_ref FROM single_matches)
+        WHERE p1.invoice_id NOT IN (SELECT invoice_id FROM single_matches)
+          AND p2.invoice_id NOT IN (SELECT invoice_id FROM single_matches)
     """)
 
     con.execute("""
@@ -343,10 +347,19 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
         WHERE rn1 = 1 AND rn2 = 1
     """)
 
-    matches_df = con.execute("""
-        SELECT * FROM single_matches
+    con.execute("""
+        CREATE TABLE all_matched_pdf_ids AS
+        SELECT invoice_id FROM single_matches
         UNION ALL
-        SELECT * FROM many_to_one_pdf_matches
+        SELECT p1_id FROM raw_many_to_one WHERE rn1 = 1 AND rn2 = 1
+        UNION ALL
+        SELECT p2_id FROM raw_many_to_one WHERE rn1 = 1 AND rn2 = 1
+    """)
+
+    matches_df = con.execute("""
+        SELECT invoice_ref, invoice_amount, invoice_date, bank_amount, bank_date, match_type, confidence FROM single_matches
+        UNION ALL
+        SELECT invoice_ref, invoice_amount, invoice_date, bank_amount, bank_date, match_type, confidence FROM many_to_one_pdf_matches
     """).df()
 
     # 3. Comprehensive & Precise Exceptions Catching 100% of Non-Matched Records
@@ -357,15 +370,13 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
             p.ref as invoice_ref,
             p.amount as invoice_amount,
             p.invoice_date as invoice_date,
-            'missing_bank_entry' as exception_type,
+            'MISSING_BANK' as exception_type,
             'HIGH' as severity,
             'No matching credit found in bank statement; verify if payout was delayed (T+1) or dropped by gateway' as recommended_action
         FROM clean_pdf_invoices p
         LEFT JOIN bank b ON p.ref = b.merchant_ref AND b.merchant_ref != ''
         WHERE b.merchant_ref IS NULL
-          AND p.ref NOT IN (SELECT invoice_ref FROM single_matches)
-          AND p.ref NOT IN (SELECT SPLIT_PART(invoice_ref, ' + ', 1) FROM many_to_one_pdf_matches)
-          AND p.ref NOT IN (SELECT SPLIT_PART(invoice_ref, ' + ', 2) FROM many_to_one_pdf_matches)
+          AND p.invoice_id NOT IN (SELECT invoice_id FROM all_matched_pdf_ids)
 
         UNION ALL
 
@@ -374,15 +385,13 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
             p.ref as invoice_ref,
             p.amount as invoice_amount,
             p.invoice_date as invoice_date,
-            'amount_mismatch' as exception_type,
+            'AMOUNT_MISMATCH' as exception_type,
             'HIGH' as severity,
             CONCAT('Bank credited ₹', b.credit_amount, ' vs Invoice ₹', p.amount, ' (₹', ROUND(ABS(p.amount - b.credit_amount), 2), ' variance); verify MDR fee deduction or GST dispute hold') as recommended_action
         FROM clean_pdf_invoices p
         JOIN bank b ON p.ref = b.merchant_ref
         WHERE ABS(p.amount - b.credit_amount) > 5.0
-          AND p.ref NOT IN (SELECT invoice_ref FROM single_matches)
-          AND p.ref NOT IN (SELECT SPLIT_PART(invoice_ref, ' + ', 1) FROM many_to_one_pdf_matches)
-          AND p.ref NOT IN (SELECT SPLIT_PART(invoice_ref, ' + ', 2) FROM many_to_one_pdf_matches)
+          AND p.invoice_id NOT IN (SELECT invoice_id FROM all_matched_pdf_ids)
     """)
 
     exceptions_df = con.execute("SELECT * FROM exceptions").df()

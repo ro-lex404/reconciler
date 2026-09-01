@@ -79,16 +79,29 @@ def router_node(state: AgentState):
 
 
 def sql_node(state: AgentState):
-    """Generates SQL, executes it via DuckDB, and returns the result with source metadata."""
+    """Generates SQL, executes it via DuckDB on active financial datasets, and returns the result with source metadata."""
     print("--- ROUTED TO SQL ENGINE ---")
-    
-    upload_dir = "/app/uploads"
-    list_of_csvs = glob.glob(os.path.join(upload_dir, "*.csv"))
-    
-    if not list_of_csvs:
-        return {"sql_result": "No dynamic CSV files found in upload directory.", "sources": []}
+    question = state.get("question", "")
+
+    csv_file_path = ""
+    try:
+        from app.services.reconciliation import resolve_finance_dataset_paths
+        rp_path, bk_path = resolve_finance_dataset_paths(hint_filename=question)
+        if rp_path.exists() and rp_path.is_file():
+            csv_file_path = str(rp_path)
+        elif bk_path.exists() and bk_path.is_file():
+            csv_file_path = str(bk_path)
+    except Exception:
+        csv_file_path = ""
+
+    if not csv_file_path or not os.path.exists(csv_file_path):
+        upload_dir = "/app/uploads"
+        list_of_csvs = glob.glob(os.path.join(upload_dir, "*.csv")) + glob.glob(os.path.join("./uploads", "*.csv"))
+        if list_of_csvs:
+            csv_file_path = max(list_of_csvs, key=os.path.getctime)
+        else:
+            return {"sql_result": "No CSV statement dataset found for active accounting period.", "sources": []}
         
-    csv_file_path = max(list_of_csvs, key=os.path.getctime)
     csv_name = os.path.basename(csv_file_path)
     sources = [{"type": "sql", "name": csv_name, "engine": "DuckDB SQL Engine"}]
     
