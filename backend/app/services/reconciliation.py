@@ -28,25 +28,86 @@ def default_finance_data_dir() -> Path:
     return Path(__file__).resolve().parents[3] / "data"
 
 
+_ACTIVE_MONTH: str = "july"
+
+
+def get_active_month() -> str:
+    global _ACTIVE_MONTH
+    return _ACTIVE_MONTH
+
+
+def set_active_month(month: str) -> str:
+    global _ACTIVE_MONTH
+    clean = month.strip().lower()
+    if clean:
+        _ACTIVE_MONTH = clean
+    return _ACTIVE_MONTH
+
+
+def list_available_datasets() -> dict[str, Any]:
+    global _ACTIVE_MONTH
+    root_data = default_finance_data_dir()
+    datasets = []
+    
+    # Check subdirectories
+    subdirs = [d.name.lower() for d in root_data.iterdir() if d.is_dir()]
+    all_months = sorted(set(subdirs + ["july", "august"]))
+    
+    for m in all_months:
+        m_dir = root_data / m if (root_data / m).exists() else root_data
+        rp = list(m_dir.glob(f"*{m}*razorpay*.csv")) + list(m_dir.glob(f"*razorpay*{m}*.csv")) + list(m_dir.glob(f"razorpay_settlements_{m}.csv"))
+        bk = list(m_dir.glob(f"*{m}*bank*.csv")) + list(m_dir.glob(f"*bank*{m}*.csv")) + list(m_dir.glob(f"bank_statement_{m}.csv"))
+        inv = list(m_dir.glob(f"*{m}*invoice*.pdf")) + list(m_dir.glob(f"*invoice*{m}*.pdf")) + list(m_dir.glob(f"invoices_{m}.pdf"))
+        
+        if not rp and m == "july" and (root_data / "razorpay_settlements.csv").exists():
+            rp = [root_data / "razorpay_settlements.csv"]
+        if not bk and m == "july" and (root_data / "bank_statement.csv").exists():
+            bk = [root_data / "bank_statement.csv"]
+        if not inv and m == "july" and (root_data / "invoices.pdf").exists():
+            inv = [root_data / "invoices.pdf"]
+
+        if rp or bk or inv:
+            datasets.append({
+                "month": m,
+                "label": f"{m.capitalize()} 2026 Batch",
+                "has_razorpay": len(rp) > 0,
+                "has_bank": len(bk) > 0,
+                "has_invoices": len(inv) > 0,
+                "razorpay_file": rp[0].name if rp else None,
+                "bank_file": bk[0].name if bk else None,
+                "invoice_file": inv[0].name if inv else None,
+            })
+            
+    return {
+        "active_month": _ACTIVE_MONTH,
+        "datasets": datasets,
+    }
+
+
 def resolve_finance_dataset_paths(
     hint_filename: str | None = None,
     razorpay_path: str | Path | None = None,
     bank_path: str | Path | None = None,
 ) -> tuple[Path, Path]:
     """Dynamically resolves the appropriate razorpay settlements and bank statement CSV files
-
     based on month hints (e.g. 'august', 'july') or directory scans.
     """
     if razorpay_path and bank_path:
         return Path(razorpay_path), Path(bank_path)
 
-    month = "july"
+    global _ACTIVE_MONTH
+    month = _ACTIVE_MONTH
     if hint_filename:
         lower = str(hint_filename).lower()
         if "aug" in lower:
             month = "august"
         elif "jul" in lower:
             month = "july"
+        elif any(k in lower for k in ["sep", "oct", "nov", "dec", "jan", "feb", "mar", "apr", "may", "jun"]):
+            for k, full_m in [("sep", "september"), ("oct", "october"), ("nov", "november"), ("dec", "december"), ("jan", "january"), ("feb", "february"), ("mar", "march"), ("apr", "april"), ("may", "may"), ("jun", "june")]:
+                if k in lower:
+                    month = full_m
+                    break
 
     root_data = default_finance_data_dir()
 

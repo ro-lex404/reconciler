@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 import duckdb
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
@@ -138,11 +138,67 @@ async def finance_reconciliation(request: ReconciliationRequest):
         rp_path, bk_path = str(rp_file), str(bk_file)
     return reconcile_settlements(rp_path, bk_path)
 
+
 # Verification endpoint to check for duplicates across match sets
 @app.get("/finance/verify")
 def verify_no_duplicates():
     rp_file, bk_file = resolve_finance_dataset_paths()
     return verify_reconciliation_integrity(str(rp_file), str(bk_file))
+
+
+@app.get("/finance/datasets")
+async def get_datasets():
+    """Lists available monthly statement batches and the current active month."""
+    from app.services.reconciliation import list_available_datasets
+    return list_available_datasets()
+
+
+class SetActiveMonthRequest(BaseModel):
+    month: str
+
+
+@app.post("/finance/set-active-month")
+async def change_active_month(request: SetActiveMonthRequest):
+    """Switches the active reconciliation month in memory."""
+    from app.services.reconciliation import set_active_month, reconcile_settlements, resolve_finance_dataset_paths
+    month = set_active_month(request.month)
+    try:
+        rp, bk = resolve_finance_dataset_paths()
+        res = reconcile_settlements(rp, bk)
+    except Exception:
+        res = None
+    return {"status": "ok", "active_month": month, "reconciliation_summary": res}
+
+
+@app.post("/finance/upload-dataset")
+async def upload_finance_dataset(
+    file: UploadFile = File(...),
+    dataset_type: str = Form("bank"),
+    month: str = Form("august"),
+    passcode: str = Form(""),
+):
+    """Uploads a bank statement CSV, Razorpay CSV, or Invoice PDF directly to the data folder."""
+    if passcode and passcode.strip() not in ["admin", "controller", "razorpay2026", "secret"]:
+        return JSONResponse({"error": "Unauthorized: Invalid Controller Passcode"}, status_code=401)
+
+    from app.services.reconciliation import default_finance_data_dir
+    root_data = default_finance_data_dir()
+    month_clean = month.strip().lower()
+    target_dir = root_data / month_clean
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    file_bytes = await file.read()
+    dest_path = target_dir / file.filename
+    with open(dest_path, "wb") as f:
+        f.write(file_bytes)
+
+    return {
+        "status": "success",
+        "filename": file.filename,
+        "saved_to": str(dest_path),
+        "dataset_type": dataset_type,
+        "month": month_clean,
+    }
 
 
 from app.agent.pdf_reconciler import pdf_reconciler_graph

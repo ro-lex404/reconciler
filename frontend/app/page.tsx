@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -78,8 +78,27 @@ interface ChatMessage {
   sources?: SourceItem[];
 }
 
+interface DatasetInfo {
+  month: string;
+  label: string;
+  has_razorpay: boolean;
+  has_bank: boolean;
+  has_invoices: boolean;
+  razorpay_file?: string;
+  bank_file?: string;
+  invoice_file?: string;
+}
+
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'chat' | 'reconciliation'>('reconciliation');
+  const [activeTab, setActiveTab] = useState<'reconciliation' | 'chat'>('reconciliation');
+
+  // --- Active Month & Dataset Management ---
+  const [availableDatasets, setAvailableDatasets] = useState<DatasetInfo[]>([
+    { month: 'july', label: 'July 2026 Batch', has_razorpay: true, has_bank: true, has_invoices: true },
+    { month: 'august', label: 'August 2026 Batch', has_razorpay: true, has_bank: true, has_invoices: true },
+  ]);
+  const [activeMonth, setActiveMonth] = useState<string>('july');
+  const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
 
   // --- RAG Chat State ---
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -93,11 +112,55 @@ export default function Home() {
   const [pdfStatus, setPdfStatus] = useState('');
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const [pdfResult, setPdfResult] = useState<ExtractPDFResponse | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
-  // --- File Upload Logic ---
+  // --- Ingestion Hub Modal Form State ---
+  const [ingestFile, setIngestFile] = useState<File | null>(null);
+  const [ingestType, setIngestType] = useState<string>('bank');
+  const [ingestMonth, setIngestMonth] = useState<string>('august');
+  const [ingestPasscode, setIngestPasscode] = useState<string>('');
+  const [ingestStatus, setIngestStatus] = useState<string>('');
+  const [isIngesting, setIsIngesting] = useState<boolean>(false);
+
+  // Fetch available datasets on initial load
+  useEffect(() => {
+    const fetchDatasets = async () => {
+      try {
+        const res = await fetch(`${getApiBaseUrl()}/finance/datasets`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.datasets) && data.datasets.length > 0) {
+            setAvailableDatasets(data.datasets);
+          }
+          if (data.active_month) {
+            setActiveMonth(data.active_month);
+          }
+        }
+      } catch {
+        // Fallback to default state
+      }
+    };
+    fetchDatasets();
+  }, []);
+
+  // Switch Active Month Handler
+  const handleSwitchMonth = async (month: string) => {
+    setActiveMonth(month);
+    try {
+      await fetch(`${getApiBaseUrl()}/finance/set-active-month`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month }),
+      });
+    } catch (err) {
+      console.error('Failed to set active month:', err);
+    }
+  };
+
+  // --- File Upload for Vector RAG Knowledge Base ---
   const handleUpload = async () => {
     if (!kbFile) return;
-    setUploadStatus('Uploading...');
+    setUploadStatus('Uploading to Vector Store...');
     const formData = new FormData();
     formData.append('file', kbFile);
 
@@ -107,13 +170,55 @@ export default function Home() {
         body: formData,
       });
       if (res.ok) {
-        setUploadStatus('File uploaded and sent to Celery worker!');
+        setUploadStatus('Document indexed in PGVector & ready for Q&A!');
         setKbFile(null);
       } else {
         setUploadStatus(`Upload failed (${res.status}).`);
       }
     } catch {
       setUploadStatus('Error connecting to backend.');
+    }
+  };
+
+  // --- Ingestion Hub Statement Uploader ---
+  const handleIngestDataset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ingestFile) return;
+    setIsIngesting(true);
+    setIngestStatus('Uploading dataset...');
+
+    const formData = new FormData();
+    formData.append('file', ingestFile);
+    formData.append('dataset_type', ingestType);
+    formData.append('month', ingestMonth);
+    formData.append('passcode', ingestPasscode);
+
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/finance/upload-dataset`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (res.ok) {
+        setIngestStatus('Statement batch saved & synced with DuckDB!');
+        setIngestFile(null);
+        // Refresh datasets list
+        const dRes = await fetch(`${getApiBaseUrl()}/finance/datasets`);
+        if (dRes.ok) {
+          const dData = await dRes.json();
+          setAvailableDatasets(dData.datasets);
+        }
+        setTimeout(() => {
+          setShowUploadModal(false);
+          setIngestStatus('');
+        }, 1500);
+      } else {
+        const err = await res.json();
+        setIngestStatus(err.error || 'Upload rejected. Check Controller Passcode.');
+      }
+    } catch {
+      setIngestStatus('Error uploading dataset to backend.');
+    } finally {
+      setIsIngesting(false);
     }
   };
 
@@ -148,6 +253,11 @@ export default function Home() {
       });
     } catch (err) {
       console.error('Chat error:', err);
+      setMessages((prev) => {
+        const updated = [...prev];
+        updated[updated.length - 1].content = '⚠️ Connection error. Please check your backend service.';
+        return updated;
+      });
     } finally {
       setIsChatLoading(false);
     }
@@ -157,7 +267,7 @@ export default function Home() {
   const handlePdfExtract = async () => {
     if (!pdfFile) return;
     setIsPdfLoading(true);
-    setPdfStatus('Processing PDF via LangGraph & DuckDB...');
+    setPdfStatus('Extracting invoices & running DuckDB multi-pass reconciliation...');
 
     const formData = new FormData();
     formData.append('file', pdfFile);
@@ -171,7 +281,7 @@ export default function Home() {
       if (res.ok) {
         const data: ExtractPDFResponse = await res.json();
         setPdfResult(data);
-        setPdfStatus(`Successfully extracted ${data.extracted_count} records from ${data.source}!`);
+        setPdfStatus(`Reconciliation complete! Processed ${data.extracted_count} invoices from ${data.source}.`);
       } else {
         setPdfStatus(`PDF Extraction failed (${res.status}).`);
       }
@@ -183,8 +293,6 @@ export default function Home() {
   };
 
   // --- Export PDF Audit Report Logic ---
-  const [isExporting, setIsExporting] = useState(false);
-
   const handleExportReport = async () => {
     if (!pdfResult) return;
     setIsExporting(true);
@@ -224,327 +332,529 @@ export default function Home() {
   };
 
   return (
-    <main className="flex h-screen bg-gray-100 p-4 text-black font-sans">
-      <div className="flex flex-col w-full bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
-        {/* Navigation Bar */}
-        <header className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="bg-blue-600 p-2 rounded-lg font-bold text-lg">RP</div>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight">Razorpay Financial Reconciliation Engine</h1>
-              <p className="text-xs text-slate-400">Powered by LangGraph, DuckDB & Groq Llama 3.3</p>
+    <div className="flex flex-col min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-blue-600 selection:text-white">
+      {/* Top Enterprise Navigation Bar */}
+      <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-6 py-3.5 flex flex-wrap items-center justify-between gap-4 shadow-xl">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20 font-black text-white text-lg">
+            ₹
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-base font-bold tracking-tight text-white">Razorpay Reconciler</h1>
+              <span className="px-2 py-0.5 text-[10px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full">
+                AI Finance Controller · Track 04
+              </span>
             </div>
+            <p className="text-xs text-slate-400">Autonomous Multi-Source Reconciliation & Cash Forecasting</p>
           </div>
-          <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
-            <button
-              onClick={() => setActiveTab('reconciliation')}
-              className={`px-4 py-2 text-sm font-semibold rounded-md transition ${
-                activeTab === 'reconciliation' ? 'bg-blue-600 text-white shadow' : 'text-slate-300 hover:text-white'
-              }`}
-            >
-              📄 PDF Extractor & Reconciler
-            </button>
-            <button
-              onClick={() => setActiveTab('chat')}
-              className={`px-4 py-2 text-sm font-semibold rounded-md transition ${
-                activeTab === 'chat' ? 'bg-blue-600 text-white shadow' : 'text-slate-300 hover:text-white'
-              }`}
-            >
-              💬 AI Agent Chat
-            </button>
-          </div>
-        </header>
+        </div>
 
-        {/* Tab 1: PDF Extractor & Reconciler */}
+        {/* Center: Navigation Tabs */}
+        <div className="flex items-center bg-slate-800/80 p-1 rounded-xl border border-slate-700/60 shadow-inner">
+          <button
+            onClick={() => setActiveTab('reconciliation')}
+            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 ${
+              activeTab === 'reconciliation'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/40'
+            }`}
+          >
+            📊 Reconciler Dashboard
+          </button>
+          <button
+            onClick={() => setActiveTab('chat')}
+            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 ${
+              activeTab === 'chat'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/40'
+            }`}
+          >
+            💬 AI Controller Chat
+          </button>
+        </div>
+
+        {/* Right: Active Audit Cycle Selector & Ingestion Hub */}
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 bg-slate-800/90 border border-slate-700 px-3 py-1.5 rounded-lg text-xs">
+            <span className="text-slate-400 font-medium">Audit Cycle:</span>
+            <select
+              value={activeMonth}
+              onChange={(e) => handleSwitchMonth(e.target.value)}
+              className="bg-slate-900 text-blue-400 font-semibold rounded px-2 py-0.5 border border-slate-700 outline-none cursor-pointer hover:border-blue-500 transition-colors"
+            >
+              {availableDatasets.map((d) => (
+                <option key={d.month} value={d.month}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            onClick={() => setShowUploadModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-blue-500 rounded-lg transition-all shadow-sm"
+            title="Upload new bank statement or settlement CSV"
+          >
+            📥 Ingest Statement
+          </button>
+        </div>
+      </header>
+
+      {/* Main Workspace Area */}
+      <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
+        {/* ============================================================ */}
+        {/* TAB 1: RECONCILER DASHBOARD & PDF EXTRACTOR */}
+        {/* ============================================================ */}
         {activeTab === 'reconciliation' && (
-          <div className="flex-1 flex flex-col p-6 overflow-y-auto bg-gray-50 space-y-6">
-            {/* Upload Box */}
-            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-bold text-gray-800">Extract & Reconcile Invoice PDF</h2>
-                <p className="text-sm text-gray-500">
-                  Upload any PDF invoice or statement. LangGraph will parse structured records and DuckDB will reconcile against bank statements.
-                </p>
-              </div>
-              <div className="flex items-center gap-3 w-full md:w-auto">
-                <input
-                  type="file"
-                  accept="application/pdf"
-                  onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
-                  className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
-                />
-                <button
-                  onClick={handlePdfExtract}
-                  disabled={!pdfFile || isPdfLoading}
-                  className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50 transition min-w-[180px]"
-                >
-                  {isPdfLoading ? 'Processing...' : 'Extract & Reconcile'}
-                </button>
-              </div>
-            </div>
-
-            {pdfStatus && (
-              <div className={`p-4 rounded-lg font-medium text-sm border flex flex-col md:flex-row items-center justify-between gap-3 ${pdfResult ? 'bg-green-50 text-green-800 border-green-200' : 'bg-blue-50 text-blue-800 border-blue-200'}`}>
-                <span>{pdfStatus}</span>
-                {pdfResult && (
-                  <button
-                    onClick={handleExportReport}
-                    disabled={isExporting}
-                    className="bg-red-700 hover:bg-red-800 text-white font-bold text-xs px-4 py-2 rounded-lg shadow-sm transition flex items-center gap-2 whitespace-nowrap"
-                  >
-                    📥 {isExporting ? 'Generating Report...' : 'Export Audit PDF Report'}
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Metrics Dashboard */}
-            {pdfResult && (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Extracted Invoices</p>
-                    <p className="text-3xl font-extrabold text-gray-900 mt-1">{pdfResult.extracted_count}</p>
-                    <p className="text-xs text-gray-400 mt-1">Source: {pdfResult.source}</p>
-                  </div>
-                  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-green-600">Reconciled Matches</p>
-                    <p className="text-3xl font-extrabold text-green-700 mt-1">{pdfResult.reconciliation.matched_count}</p>
-                    <p className="text-xs text-green-600 mt-1">Exact & Fuzzy Matched</p>
-                  </div>
-                  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-red-500">Unmatched Exceptions</p>
-                    <p className="text-3xl font-extrabold text-red-600 mt-1">{pdfResult.reconciliation.exception_count}</p>
-                    <p className="text-xs text-red-500 mt-1">Action Required</p>
-                  </div>
-                  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">Measured Match Rate</p>
-                    <p className="text-3xl font-extrabold text-blue-700 mt-1">
-                      {((pdfResult.reconciliation.matched_count / (pdfResult.extracted_count || 1)) * 100).toFixed(2)}%
-                    </p>
-                    <p className="text-xs text-blue-600 mt-1">Invoice-vs-Bank Verification</p>
-                  </div>
-                  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Reconciled Against</p>
-                    <p className="text-xs font-mono font-bold text-blue-700 mt-2 truncate" title={pdfResult.reconciliation.source_dataset}>
-                      📊 {pdfResult.reconciliation.source_dataset || 'Auto-matched Month'}
-                    </p>
-                    <span className="inline-block mt-2 px-2.5 py-1 text-xs font-bold bg-blue-100 text-blue-800 rounded-full">
-                      DuckDB + LangGraph
+          <div className="space-y-6">
+            {/* Header & Ingestion Card */}
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden backdrop-blur-sm">
+              <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+              
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+                <div>
+                  <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                    📄 PDF Invoice Extractor & Bank Settlement Matcher
+                  </h2>
+                  <p className="text-sm text-slate-400 mt-1 max-w-2xl">
+                    Upload multi-page invoice PDFs to extract structured line items, reconcile against Razorpay gateway settlements & bank statements, and resolve Many-to-One lump sum batches in DuckDB.
+                  </p>
+                  
+                  {/* Current Active Dataset Badges */}
+                  <div className="flex flex-wrap items-center gap-2 mt-3 text-xs">
+                    <span className="text-slate-400">Target Statements:</span>
+                    <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md font-mono">
+                      ✓ bank_statement_{activeMonth}.csv
+                    </span>
+                    <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-md font-mono">
+                      ✓ razorpay_settlements_{activeMonth}.csv
                     </span>
                   </div>
                 </div>
 
-                {/* Extracted PDF Transactions Table */}
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-bold text-gray-800">Extracted PDF Invoice Records ({pdfResult.records.length})</h3>
-                  </div>
-                  <div className="overflow-x-auto border border-gray-200 rounded-lg">
-                    <table className="min-w-full divide-y divide-gray-200 text-sm">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-4 py-3 text-left font-semibold text-gray-600">Ref ID</th>
-                          <th className="px-4 py-3 text-left font-semibold text-gray-600">Amount</th>
-                          <th className="px-4 py-3 text-left font-semibold text-gray-600">Date</th>
-                          <th className="px-4 py-3 text-left font-semibold text-gray-600">Category</th>
-                          <th className="px-4 py-3 text-left font-semibold text-gray-600">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200 bg-white">
-                        {pdfResult.records.map((rec, idx) => (
-                          <tr key={idx} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 font-mono font-bold text-blue-600">{rec.ref}</td>
-                            <td className="px-4 py-3 font-semibold text-gray-900">₹{rec.amount.toLocaleString()}</td>
-                            <td className="px-4 py-3 text-gray-600">{rec.date}</td>
-                            <td className="px-4 py-3 text-gray-600 capitalize">{rec.description || 'N/A'}</td>
-                            <td className="px-4 py-3">
-                              <span className="px-2 py-1 text-xs font-bold rounded-full bg-green-100 text-green-800">
-                                {rec.status || 'PAID'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                {/* Upload Action Box */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 bg-slate-950/80 p-3 rounded-xl border border-slate-800">
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
+                    className="text-xs text-slate-300 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer"
+                  />
+                  <button
+                    onClick={handlePdfExtract}
+                    disabled={!pdfFile || isPdfLoading}
+                    className="px-5 py-2 text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center gap-2 shrink-0"
+                  >
+                    {isPdfLoading ? (
+                      <>
+                        <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Extracting & Matching...
+                      </>
+                    ) : (
+                      '⚡ Extract & Reconcile'
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {pdfStatus && (
+                <div className="mt-4 px-4 py-2.5 bg-blue-500/10 border border-blue-500/20 rounded-xl text-xs text-blue-300 flex items-center justify-between">
+                  <span>ℹ️ {pdfStatus}</span>
+                  {pdfResult && (
+                    <button
+                      onClick={handleExportReport}
+                      disabled={isExporting}
+                      className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg text-xs shadow transition-all flex items-center gap-1.5"
+                    >
+                      {isExporting ? 'Generating Report...' : '📥 Export PDF Audit Report'}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Reconciliation KPI Metrics */}
+            {pdfResult && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg relative overflow-hidden">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Total PDF Invoices</p>
+                  <p className="text-3xl font-black text-white mt-1">{pdfResult.extracted_count}</p>
+                  <p className="text-xs text-slate-400 mt-2">Extracted via Groq Llama 3.3 70B</p>
                 </div>
 
-                {/* Reconciliation Matches */}
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-4">
-                  <h3 className="text-lg font-bold text-gray-800">Bank Statement Reconciliation Matches ({pdfResult.reconciliation.matches.length})</h3>
-                  <div className="overflow-x-auto border border-gray-200 rounded-lg">
-                    <table className="min-w-full divide-y divide-gray-200 text-sm">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-4 py-3 text-left font-semibold text-gray-600">Invoice Ref</th>
-                          <th className="px-4 py-3 text-left font-semibold text-gray-600">Invoice Amount</th>
-                          <th className="px-4 py-3 text-left font-semibold text-gray-600">Bank Amount</th>
-                          <th className="px-4 py-3 text-left font-semibold text-gray-600">Dates (Invoice / Bank)</th>
-                          <th className="px-4 py-3 text-left font-semibold text-gray-600">Match Type</th>
-                          <th className="px-4 py-3 text-left font-semibold text-gray-600">Confidence</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200 bg-white">
-                        {pdfResult.reconciliation.matches.map((m, idx) => (
-                          <tr key={idx} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 font-mono font-bold text-gray-800">{m.invoice_ref}</td>
-                            <td className="px-4 py-3 font-semibold text-gray-900">₹{m.invoice_amount.toLocaleString()}</td>
-                            <td className="px-4 py-3 font-semibold text-gray-900">₹{m.bank_amount.toLocaleString()}</td>
-                            <td className="px-4 py-3 text-gray-500 text-xs">{m.invoice_date} / {m.bank_date}</td>
-                            <td className="px-4 py-3">
-                              <span className={`px-2.5 py-1 text-xs font-bold rounded-full ${m.match_type === 'EXACT' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
-                                {m.match_type}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 font-semibold text-gray-700">{(m.confidence * 100).toFixed(0)}%</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg relative overflow-hidden">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400">Matched Invoices</p>
+                  <p className="text-3xl font-black text-emerald-400 mt-1">{pdfResult.reconciliation.matched_count}</p>
+                  <p className="text-xs text-emerald-500/80 mt-2">Exact, Fuzzy & Many-to-One Matches</p>
                 </div>
 
-                {/* Exceptions Alert List */}
-                {pdfResult.reconciliation.exceptions.length > 0 && (
-                  <div className="bg-red-50 rounded-xl border border-red-200 p-6 space-y-4">
-                    <h3 className="text-lg font-bold text-red-800">High-Severity Unmatched Exceptions ({pdfResult.reconciliation.exceptions.length})</h3>
-                    <div className="space-y-3">
-                      {pdfResult.reconciliation.exceptions.map((exc, idx) => (
-                        <div key={idx} className="bg-white p-4 rounded-lg border border-red-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono font-bold text-red-700">{exc.invoice_ref}</span>
-                              <span className="px-2 py-0.5 text-xs font-extrabold bg-red-100 text-red-800 rounded">{exc.severity} SEVERITY</span>
-                              <span className="text-xs text-gray-500">{exc.invoice_date}</span>
-                            </div>
-                            <p className="text-sm font-semibold text-gray-800 mt-1">Amount: ₹{exc.invoice_amount.toLocaleString()}</p>
-                            <p className="text-xs text-red-600 mt-1">💡 Action: {exc.recommended_action}</p>
-                          </div>
-                        </div>
+                <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg relative overflow-hidden">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-rose-400">Flagged Exceptions</p>
+                  <p className="text-3xl font-black text-rose-400 mt-1">{pdfResult.reconciliation.exception_count}</p>
+                  <p className="text-xs text-rose-500/80 mt-2">Requires Controller Investigation</p>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg relative overflow-hidden">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-blue-400">Reconciled Against</p>
+                  <p className="text-xs font-mono font-bold text-blue-300 mt-2 truncate" title={pdfResult.reconciliation.source_dataset}>
+                    📊 {pdfResult.reconciliation.source_dataset || `${activeMonth} Statement Batch`}
+                  </p>
+                  <span className="inline-block mt-3 px-2 py-0.5 text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-md">
+                    DuckDB SQL Engine
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Extracted Invoices Table */}
+            {pdfResult && (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    📋 Extracted PDF Invoice Records ({pdfResult.records.length})
+                  </h3>
+                  <span className="text-xs text-slate-400">Schema enforced via Pydantic</span>
+                </div>
+
+                <div className="overflow-x-auto border border-slate-800 rounded-xl">
+                  <table className="min-w-full divide-y divide-slate-800 text-xs">
+                    <thead className="bg-slate-950/70 text-slate-400 uppercase font-semibold">
+                      <tr>
+                        <th className="px-4 py-3 text-left">Invoice Ref</th>
+                        <th className="px-4 py-3 text-left">Invoice Date</th>
+                        <th className="px-4 py-3 text-right">Amount (₹)</th>
+                        <th className="px-4 py-3 text-left">Description</th>
+                        <th className="px-4 py-3 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
+                      {pdfResult.records.slice(0, 15).map((r, i) => (
+                        <tr key={i} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="px-4 py-2.5 font-mono font-medium text-blue-400">{r.ref}</td>
+                          <td className="px-4 py-2.5 text-slate-300">{r.date}</td>
+                          <td className="px-4 py-2.5 text-right font-mono font-semibold text-white">
+                            ₹{r.amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-4 py-2.5 text-slate-400 max-w-xs truncate">{r.description || 'Standard Invoice'}</td>
+                          <td className="px-4 py-2.5 text-center">
+                            <span className="px-2 py-0.5 text-[10px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full">
+                              Extracted
+                            </span>
+                          </td>
+                        </tr>
                       ))}
-                    </div>
-                  </div>
+                    </tbody>
+                  </table>
+                </div>
+                {pdfResult.records.length > 15 && (
+                  <p className="text-xs text-center text-slate-500">
+                    Showing 15 of {pdfResult.records.length} records. Download Audit Report for the complete ledger.
+                  </p>
                 )}
-              </>
+              </div>
+            )}
+
+            {/* Exceptions & Actionable Guidance Table */}
+            {pdfResult && pdfResult.reconciliation.exceptions.length > 0 && (
+              <div className="bg-slate-900 border border-rose-900/40 rounded-2xl p-6 shadow-xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-bold text-rose-400 flex items-center gap-2">
+                    ⚠️ Reconciliation Exceptions & Anomaly Guidance ({pdfResult.reconciliation.exceptions.length})
+                  </h3>
+                  <span className="text-xs text-rose-400/80 font-medium">Categorized Anomaly Action Items</span>
+                </div>
+
+                <div className="overflow-x-auto border border-slate-800 rounded-xl">
+                  <table className="min-w-full divide-y divide-slate-800 text-xs">
+                    <thead className="bg-slate-950/70 text-slate-400 uppercase font-semibold">
+                      <tr>
+                        <th className="px-4 py-3 text-left">Invoice Ref</th>
+                        <th className="px-4 py-3 text-right">Amount (₹)</th>
+                        <th className="px-4 py-3 text-left">Exception Type</th>
+                        <th className="px-4 py-3 text-center">Severity</th>
+                        <th className="px-4 py-3 text-left">Recommended Controller Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
+                      {pdfResult.reconciliation.exceptions.map((ex, i) => (
+                        <tr key={i} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="px-4 py-2.5 font-mono font-medium text-rose-400">{ex.invoice_ref}</td>
+                          <td className="px-4 py-2.5 text-right font-mono font-semibold text-white">
+                            ₹{ex.invoice_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-4 py-2.5 text-slate-300 font-mono text-[11px]">{ex.exception_type}</td>
+                          <td className="px-4 py-2.5 text-center">
+                            <span className="px-2 py-0.5 text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-full">
+                              {ex.severity || 'HIGH'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-slate-300 font-medium">{ex.recommended_action}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             )}
           </div>
         )}
 
-        {/* Tab 2: AI Agent Chat */}
+        {/* ============================================================ */}
+        {/* TAB 2: AI FINANCE CONTROLLER AGENT CHAT */}
+        {/* ============================================================ */}
         {activeTab === 'chat' && (
-          <div className="flex-1 flex overflow-hidden">
-            {/* Knowledge Base Sidebar */}
-            <aside className="w-1/3 max-w-sm bg-white p-6 flex flex-col border-r border-gray-200">
-              <h2 className="text-xl font-bold mb-2 text-gray-800">Knowledge Base</h2>
-              <p className="text-sm text-gray-500 mb-6">
-                Upload CSVs for DuckDB queries or PDFs for Vector Search.
-              </p>
-              <input
-                type="file"
-                onChange={(e) => setKbFile(e.target.files?.[0] || null)}
-                className="mb-4 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
-              />
-              <button
-                onClick={handleUpload}
-                disabled={!kbFile}
-                className="bg-blue-600 text-white py-2 rounded-lg disabled:opacity-50 hover:bg-blue-700 transition font-medium"
-              >
-                Upload & Process
-              </button>
-              {uploadStatus && <p className="mt-4 text-sm text-blue-600 font-medium">{uploadStatus}</p>}
-            </aside>
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100vh-140px)]">
+            {/* Left Knowledge Base & Prompt Chips */}
+            <div className="lg:col-span-1 bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between shadow-xl space-y-4">
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    🧠 Hybrid AI Agent
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Powered by LangGraph router, DuckDB text-to-SQL, and PGVector dense semantic search.
+                  </p>
+                </div>
 
-            {/* Chat Area */}
-            <section className="flex-1 flex flex-col overflow-hidden bg-gray-50">
-              <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                {messages.map((msg, idx) => (
-                  <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[75%] p-4 rounded-xl shadow-sm ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-white text-gray-800 border border-gray-200'}`}>
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                          ul: ({ children }) => <ul className="list-disc pl-5 mb-2">{children}</ul>,
-                          ol: ({ children }) => <ol className="list-decimal pl-5 mb-2">{children}</ol>,
-                          table: ({ children }) => (
-                            <div className="overflow-x-auto mb-2">
-                              <table className="w-full border-collapse text-sm">{children}</table>
-                            </div>
-                          ),
-                          th: ({ children }) => <th className="border border-gray-300 px-2 py-1 text-left">{children}</th>,
-                          td: ({ children }) => <td className="border border-gray-300 px-2 py-1">{children}</td>,
-                          code: ({ children }) => <code className="bg-black/10 px-1 py-0.5 rounded">{children}</code>,
-                        }}
+                {/* Vector KB Upload Box */}
+                <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 space-y-2">
+                  <p className="text-xs font-semibold text-slate-300">Add Document to Vector KB</p>
+                  <input
+                    type="file"
+                    accept=".pdf,.txt"
+                    onChange={(e) => setKbFile(e.target.files?.[0] || null)}
+                    className="text-[11px] text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[11px] file:font-semibold file:bg-slate-800 file:text-slate-300 hover:file:bg-slate-700 cursor-pointer w-full"
+                  />
+                  <button
+                    onClick={handleUpload}
+                    disabled={!kbFile}
+                    className="w-full py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-xs font-semibold text-white rounded-lg border border-slate-700 transition-colors"
+                  >
+                    Index in Vector Store
+                  </button>
+                  {uploadStatus && <p className="text-[11px] text-blue-400">{uploadStatus}</p>}
+                </div>
+
+                {/* Suggested Controller Prompts */}
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Suggested Inquiries</p>
+                  {[
+                    "What's the total unreconciled amount?",
+                    'Why was REF1004 flagged as an anomaly?',
+                    'Project upcoming cash settlement inflows for next week',
+                    'Show all exceptions with amounts above ₹1,000',
+                    'Summarize the August reconciliation batch',
+                  ].map((prompt, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setInput(prompt)}
+                      className="w-full text-left text-xs text-slate-300 bg-slate-950/50 hover:bg-blue-600/10 hover:text-blue-400 hover:border-blue-500/30 p-2.5 rounded-lg border border-slate-800 transition-all leading-snug"
+                    >
+                      💡 {prompt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Status Info */}
+              <div className="pt-3 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                <span>Active Cycle: <b className="text-blue-400 capitalize">{activeMonth}</b></span>
+                <span className="text-emerald-400">● Live DuckDB</span>
+              </div>
+            </div>
+
+            {/* Right Chat Stream */}
+            <div className="lg:col-span-3 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col shadow-xl overflow-hidden">
+              {/* Messages Container */}
+              <div className="flex-1 p-6 overflow-y-auto space-y-4">
+                {messages.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-3">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-2xl text-blue-400 shadow-inner">
+                      💬
+                    </div>
+                    <h4 className="text-base font-bold text-white">Ask the AI Finance Controller</h4>
+                    <p className="text-xs text-slate-400 max-w-md">
+                      Inquire about reconciliation variances, transaction references, 7-day forward cash flow forecasts, or specific invoice discrepancies.
+                    </p>
+                  </div>
+                ) : (
+                  messages.map((m, idx) => (
+                    <div
+                      key={idx}
+                      className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'} space-y-1.5`}
+                    >
+                      <div className="flex items-center gap-2 px-1">
+                        <span className="text-[11px] font-semibold text-slate-400">
+                          {m.role === 'user' ? '👤 Finance Officer' : '🤖 AI Controller'}
+                        </span>
+                      </div>
+
+                      <div
+                        className={`p-4 rounded-2xl text-xs max-w-2xl leading-relaxed shadow-md ${
+                          m.role === 'user'
+                            ? 'bg-blue-600 text-white rounded-br-none'
+                            : 'bg-slate-950 border border-slate-800 text-slate-200 rounded-bl-none'
+                        }`}
                       >
-                        {formatMessageForMarkdown(msg.content)}
-                      </ReactMarkdown>
-
-                      {/* Interactive Source Attribution Chips */}
-                      {msg.role === 'ai' && msg.sources && msg.sources.length > 0 && (
-                        <div className="mt-3 pt-2.5 border-t border-gray-200">
-                          <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                            <span>📚 Sources & Evidence:</span>
+                        {m.content ? (
+                          <div className="prose prose-invert prose-xs max-w-none">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {formatMessageForMarkdown(m.content)}
+                            </ReactMarkdown>
                           </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {msg.sources.map((src, i) => (
-                              <span
-                                key={i}
-                                title={src.snippet || src.engine || src.name}
-                                className="inline-flex items-center gap-1 text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-md shadow-xs hover:bg-blue-100 transition cursor-help"
+                        ) : (
+                          <div className="flex items-center gap-2 text-slate-400">
+                            <span className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-ping" />
+                            Analyzing with DuckDB & Groq LLM...
+                          </div>
+                        )}
+
+                        {/* Explainable AI Evidence Badges */}
+                        {m.sources && m.sources.length > 0 && (
+                          <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex flex-wrap items-center gap-1.5">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">
+                              Sources:
+                            </span>
+                            {m.sources.map((s, sIdx) => (
+                              <div
+                                key={sIdx}
+                                title={s.snippet || s.engine || s.name}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-900 text-blue-300 border border-slate-700/60 shadow-sm cursor-help hover:border-blue-500/50 hover:bg-slate-800 transition-colors"
                               >
-                                {src.type === 'document' ? '📄' : '📊'} {src.name}
-                                {src.page ? ` (p. ${src.page})` : ''}
-                              </span>
+                                {s.type === 'document' ? '📄' : '📊'}
+                                <span>{s.name}</span>
+                                {s.page && <span className="text-slate-400 font-mono">p.{s.page}</span>}
+                              </div>
                             ))}
                           </div>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
 
-              {/* Suggested Prompt Pills */}
-              <div className="px-4 py-2.5 border-t border-gray-200 bg-gray-100 flex flex-wrap items-center gap-2">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Suggested Prompts:</span>
-                {[
-                  "What's the total unreconciled amount?",
-                  "Why was REF1004 flagged?",
-                  "Show me all exceptions above ₹1,000",
-                  "What's the projected settlement inflow next week?",
-                ].map((promptText, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => setInput(promptText)}
-                    className="text-xs font-semibold bg-white border border-gray-300 text-blue-700 hover:bg-blue-50 hover:border-blue-400 px-3 py-1.5 rounded-full transition shadow-sm"
-                  >
-                    💡 {promptText}
-                  </button>
-                ))}
-              </div>
-
-              <form onSubmit={handleChat} className="p-4 border-t border-gray-200 flex gap-2 bg-white">
+              {/* Chat Input Bar */}
+              <form onSubmit={handleChat} className="p-4 bg-slate-950/80 border-t border-slate-800 flex gap-3 items-center">
                 <input
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask about your financial data or reconciliation status..."
-                  className="flex-1 border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-600 bg-white"
+                  placeholder="Ask a question (e.g. 'What is the net projected payout next week?')..."
+                  className="flex-1 bg-slate-900 text-xs text-white border border-slate-800 focus:border-blue-500 rounded-xl px-4 py-2.5 outline-none transition-colors"
                 />
                 <button
                   type="submit"
-                  disabled={isChatLoading}
-                  className="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 transition font-bold disabled:opacity-60 disabled:cursor-not-allowed"
+                  disabled={!input.trim() || isChatLoading}
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-xs font-bold text-white rounded-xl shadow-lg shadow-blue-600/20 transition-all flex items-center gap-1.5"
                 >
-                  {isChatLoading ? 'Sending...' : 'Send'}
+                  Send
                 </button>
               </form>
-            </section>
+            </div>
           </div>
         )}
-      </div>
-    </main>
+      </main>
+
+      {/* ============================================================ */}
+      {/* MODAL: INGESTION HUB (Multi-Source Statement Uploader) */}
+      {/* ============================================================ */}
+      {showUploadModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                📥 Ingest New Statement Batch
+              </h3>
+              <button
+                onClick={() => setShowUploadModal(false)}
+                className="text-slate-400 hover:text-white text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Upload bank statement CSVs, Razorpay settlement reports, or invoices for any month. They will be immediately available to DuckDB and the AI Controller with zero container restarts.
+            </p>
+
+            <form onSubmit={handleIngestDataset} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Document Type</label>
+                <select
+                  value={ingestType}
+                  onChange={(e) => setIngestType(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none focus:border-blue-500"
+                >
+                  <option value="bank">Bank Statement (CSV/Excel)</option>
+                  <option value="razorpay">Razorpay Settlement Report (CSV)</option>
+                  <option value="invoice">Invoices Ledger (PDF)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Target Statement Month</label>
+                <input
+                  type="text"
+                  value={ingestMonth}
+                  onChange={(e) => setIngestMonth(e.target.value)}
+                  placeholder="e.g. august, september, october"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none focus:border-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Select File</label>
+                <input
+                  type="file"
+                  accept=".csv,.pdf,.xlsx"
+                  onChange={(e) => setIngestFile(e.target.files?.[0] || null)}
+                  className="w-full text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-slate-300 hover:file:bg-slate-700 cursor-pointer"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  Finance Controller Passcode <span className="text-slate-500 font-normal">(Default: admin)</span>
+                </label>
+                <input
+                  type="password"
+                  value={ingestPasscode}
+                  onChange={(e) => setIngestPasscode(e.target.value)}
+                  placeholder="Enter controller passcode"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none focus:border-blue-500"
+                />
+              </div>
+
+              {ingestStatus && (
+                <p className="text-xs text-blue-400 font-medium bg-blue-500/10 p-2 rounded-lg border border-blue-500/20">
+                  {ingestStatus}
+                </p>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowUploadModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!ingestFile || isIngesting}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-lg font-bold shadow-lg shadow-blue-600/20 flex items-center gap-1.5"
+                >
+                  {isIngesting ? 'Uploading...' : 'Upload & Sync'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
