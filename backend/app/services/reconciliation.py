@@ -28,12 +28,24 @@ def default_finance_data_dir() -> Path:
     return Path(__file__).resolve().parents[3] / "data"
 
 
+_ACTIVE_YEAR: str = "2026"
 _ACTIVE_MONTH: str = "july"
 
 
-def get_active_month() -> str:
-    global _ACTIVE_MONTH
-    return _ACTIVE_MONTH
+def get_active_period() -> tuple[str, str]:
+    global _ACTIVE_YEAR, _ACTIVE_MONTH
+    return _ACTIVE_YEAR, _ACTIVE_MONTH
+
+
+def set_active_period(year: str, month: str) -> tuple[str, str]:
+    global _ACTIVE_YEAR, _ACTIVE_MONTH
+    y = year.strip()
+    m = month.strip().lower()
+    if y:
+        _ACTIVE_YEAR = y
+    if m:
+        _ACTIVE_MONTH = m
+    return _ACTIVE_YEAR, _ACTIVE_MONTH
 
 
 def set_active_month(month: str) -> str:
@@ -45,41 +57,63 @@ def set_active_month(month: str) -> str:
 
 
 def list_available_datasets() -> dict[str, Any]:
-    global _ACTIVE_MONTH
+    global _ACTIVE_YEAR, _ACTIVE_MONTH
     root_data = default_finance_data_dir()
     datasets = []
+    years_found = set(["2026"])
     
-    # Check subdirectories
-    subdirs = [d.name.lower() for d in root_data.iterdir() if d.is_dir()]
-    all_months = sorted(set(subdirs + ["july", "august"]))
+    # 1. Check Year subdirectories (e.g. data/2026/july/, data/2025/august/)
+    for y_dir in root_data.iterdir():
+        if y_dir.is_dir() and re.match(r"^\d{4}$", y_dir.name):
+            year_str = y_dir.name
+            years_found.add(year_str)
+            for m_dir in y_dir.iterdir():
+                if m_dir.is_dir():
+                    m = m_dir.name.lower()
+                    rp = list(m_dir.glob("*.csv"))
+                    bk = [f for f in rp if "bank" in f.name.lower()]
+                    rp = [f for f in rp if "razorpay" in f.name.lower()]
+                    inv = list(m_dir.glob("*.pdf"))
+                    datasets.append({
+                        "year": year_str,
+                        "month": m,
+                        "label": f"{m.capitalize()} {year_str}",
+                        "has_razorpay": len(rp) > 0,
+                        "has_bank": len(bk) > 0,
+                        "has_invoices": len(inv) > 0,
+                        "razorpay_file": rp[0].name if rp else None,
+                        "bank_file": bk[0].name if bk else None,
+                        "invoice_file": inv[0].name if inv else None,
+                        "path": f"{year_str}/{m}",
+                    })
     
-    for m in all_months:
-        m_dir = root_data / m if (root_data / m).exists() else root_data
-        rp = list(m_dir.glob(f"*{m}*razorpay*.csv")) + list(m_dir.glob(f"*razorpay*{m}*.csv")) + list(m_dir.glob(f"razorpay_settlements_{m}.csv"))
-        bk = list(m_dir.glob(f"*{m}*bank*.csv")) + list(m_dir.glob(f"*bank*{m}*.csv")) + list(m_dir.glob(f"bank_statement_{m}.csv"))
-        inv = list(m_dir.glob(f"*{m}*invoice*.pdf")) + list(m_dir.glob(f"*invoice*{m}*.pdf")) + list(m_dir.glob(f"invoices_{m}.pdf"))
-        
-        if not rp and m == "july" and (root_data / "razorpay_settlements.csv").exists():
-            rp = [root_data / "razorpay_settlements.csv"]
-        if not bk and m == "july" and (root_data / "bank_statement.csv").exists():
-            bk = [root_data / "bank_statement.csv"]
-        if not inv and m == "july" and (root_data / "invoices.pdf").exists():
-            inv = [root_data / "invoices.pdf"]
-
-        if rp or bk or inv:
-            datasets.append({
-                "month": m,
-                "label": f"{m.capitalize()} 2026 Batch",
-                "has_razorpay": len(rp) > 0,
-                "has_bank": len(bk) > 0,
-                "has_invoices": len(inv) > 0,
-                "razorpay_file": rp[0].name if rp else None,
-                "bank_file": bk[0].name if bk else None,
-                "invoice_file": inv[0].name if inv else None,
-            })
+    # 2. Check flat month directories for backwards compatibility (data/july/, data/august/)
+    flat_months = ["july", "august"]
+    for m in flat_months:
+        # Check if not already added under 2026
+        if not any(d["year"] == "2026" and d["month"] == m for d in datasets):
+            m_dir = root_data / m if (root_data / m).exists() else root_data
+            rp = list(m_dir.glob(f"*{m}*razorpay*.csv")) + list(m_dir.glob(f"razorpay_settlements_{m}.csv"))
+            bk = list(m_dir.glob(f"*{m}*bank*.csv")) + list(m_dir.glob(f"bank_statement_{m}.csv"))
+            inv = list(m_dir.glob(f"*{m}*invoice*.pdf")) + list(m_dir.glob(f"invoices_{m}.pdf"))
+            if rp or bk or inv:
+                datasets.append({
+                    "year": "2026",
+                    "month": m,
+                    "label": f"{m.capitalize()} 2026",
+                    "has_razorpay": len(rp) > 0,
+                    "has_bank": len(bk) > 0,
+                    "has_invoices": len(inv) > 0,
+                    "razorpay_file": rp[0].name if rp else None,
+                    "bank_file": bk[0].name if bk else None,
+                    "invoice_file": inv[0].name if inv else None,
+                    "path": f"2026/{m}",
+                })
             
     return {
+        "active_year": _ACTIVE_YEAR,
         "active_month": _ACTIVE_MONTH,
+        "years": sorted(list(years_found), reverse=True),
         "datasets": datasets,
     }
 
@@ -90,15 +124,21 @@ def resolve_finance_dataset_paths(
     bank_path: str | Path | None = None,
 ) -> tuple[Path, Path]:
     """Dynamically resolves the appropriate razorpay settlements and bank statement CSV files
-    based on month hints (e.g. 'august', 'july') or directory scans.
+    based on year/month hints or hierarchical directory scans.
     """
     if razorpay_path and bank_path:
         return Path(razorpay_path), Path(bank_path)
 
-    global _ACTIVE_MONTH
+    global _ACTIVE_YEAR, _ACTIVE_MONTH
+    year = _ACTIVE_YEAR
     month = _ACTIVE_MONTH
+
     if hint_filename:
         lower = str(hint_filename).lower()
+        if "202" in lower:
+            m_yr = re.search(r"(202\d)", lower)
+            if m_yr:
+                year = m_yr.group(1)
         if "aug" in lower:
             month = "august"
         elif "jul" in lower:
@@ -111,8 +151,12 @@ def resolve_finance_dataset_paths(
 
     root_data = default_finance_data_dir()
 
-    # Search candidate directories in priority order: subfolder first, then root data folder
+    # Search candidate directories in priority order:
+    # 1. root / year / month
+    # 2. root / month
+    # 3. root
     candidate_dirs = [
+        root_data / year / month,
         root_data / month,
         root_data,
     ]
@@ -135,8 +179,8 @@ def resolve_finance_dataset_paths(
         if rp_candidates and bk_candidates:
             return rp_candidates[0], bk_candidates[0]
 
-    # Default fallback
-    fallback_dir = root_data / month if (root_data / month).exists() else root_data
+    # Fallback
+    fallback_dir = root_data / year / month if (root_data / year / month).exists() else (root_data / month if (root_data / month).exists() else root_data)
     rp_default = fallback_dir / f"razorpay_settlements_{month}.csv"
     bk_default = fallback_dir / f"bank_statement_{month}.csv"
     if not rp_default.exists():

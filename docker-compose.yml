@@ -46,8 +46,8 @@ services:
     volumes:
       - ./backend:/app                # Hot-reloading for local development
       - ./backend/uploads:/app/uploads   # Shared volume for PDFs/CSVs
-      - ./data:/app/finance-data:ro
-      - ./data:/app/data:ro
+      - ./data:/app/finance-data
+      - ./data:/app/data
     depends_on:
       db:
         condition: service_healthy
@@ -71,8 +71,8 @@ services:
     volumes:
       - ./backend:/app
       - ./backend/uploads:/app/uploads   # Must match API uploads mount so Celery can read uploaded files
-      - ./data:/app/finance-data:ro
-      - ./data:/app/data:ro
+      - ./data:/app/finance-data
+      - ./data:/app/data
     depends_on:
       db:
         condition: service_healthy

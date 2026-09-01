@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -79,6 +79,7 @@ interface ChatMessage {
 }
 
 interface DatasetInfo {
+  year?: string;
   month: string;
   label: string;
   has_razorpay: boolean;
@@ -87,18 +88,37 @@ interface DatasetInfo {
   razorpay_file?: string;
   bank_file?: string;
   invoice_file?: string;
+  path?: string;
 }
+
+const MONTH_NAMES = [
+  'january', 'february', 'march', 'april', 'may', 'june',
+  'july', 'august', 'september', 'october', 'november', 'december'
+];
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'reconciliation' | 'chat'>('reconciliation');
 
-  // --- Active Month & Dataset Management ---
+  // --- Hierarchical Period / Calendar State ---
   const [availableDatasets, setAvailableDatasets] = useState<DatasetInfo[]>([
-    { month: 'july', label: 'July 2026 Batch', has_razorpay: true, has_bank: true, has_invoices: true },
-    { month: 'august', label: 'August 2026 Batch', has_razorpay: true, has_bank: true, has_invoices: true },
+    { year: '2026', month: 'july', label: 'July 2026', has_razorpay: true, has_bank: true, has_invoices: true },
+    { year: '2026', month: 'august', label: 'August 2026', has_razorpay: true, has_bank: true, has_invoices: true },
   ]);
+  const [availableYears, setAvailableYears] = useState<string[]>(['2026', '2025', '2024']);
+  const [selectedYear, setSelectedYear] = useState<string>('2026');
   const [activeMonth, setActiveMonth] = useState<string>('july');
+  const [showCalendarDropdown, setShowCalendarDropdown] = useState<boolean>(false);
+  const calendarRef = useRef<HTMLDivElement>(null);
+
+  // --- Ingestion Hub Modal Form State ---
   const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
+  const [ingestFile, setIngestFile] = useState<File | null>(null);
+  const [ingestType, setIngestType] = useState<string>('bank');
+  const [ingestYear, setIngestYear] = useState<string>('2026');
+  const [ingestMonth, setIngestMonth] = useState<string>('august');
+  const [ingestPasscode, setIngestPasscode] = useState<string>('');
+  const [ingestStatus, setIngestStatus] = useState<string>('');
+  const [isIngesting, setIsIngesting] = useState<boolean>(false);
 
   // --- RAG Chat State ---
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -114,13 +134,16 @@ export default function Home() {
   const [pdfResult, setPdfResult] = useState<ExtractPDFResponse | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
-  // --- Ingestion Hub Modal Form State ---
-  const [ingestFile, setIngestFile] = useState<File | null>(null);
-  const [ingestType, setIngestType] = useState<string>('bank');
-  const [ingestMonth, setIngestMonth] = useState<string>('august');
-  const [ingestPasscode, setIngestPasscode] = useState<string>('');
-  const [ingestStatus, setIngestStatus] = useState<string>('');
-  const [isIngesting, setIsIngesting] = useState<boolean>(false);
+  // Close calendar popover on outside click
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (calendarRef.current && !calendarRef.current.contains(event.target as Node)) {
+        setShowCalendarDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Fetch available datasets on initial load
   useEffect(() => {
@@ -131,6 +154,12 @@ export default function Home() {
           const data = await res.json();
           if (Array.isArray(data.datasets) && data.datasets.length > 0) {
             setAvailableDatasets(data.datasets);
+          }
+          if (Array.isArray(data.years) && data.years.length > 0) {
+            setAvailableYears(data.years);
+          }
+          if (data.active_year) {
+            setSelectedYear(data.active_year);
           }
           if (data.active_month) {
             setActiveMonth(data.active_month);
@@ -144,8 +173,11 @@ export default function Home() {
   }, []);
 
   // Switch Active Month Handler
-  const handleSwitchMonth = async (month: string) => {
+  const handleSelectPeriod = async (year: string, month: string) => {
+    setSelectedYear(year);
     setActiveMonth(month);
+    setShowCalendarDropdown(false);
+
     try {
       await fetch(`${getApiBaseUrl()}/finance/set-active-month`, {
         method: 'POST',
@@ -153,7 +185,7 @@ export default function Home() {
         body: JSON.stringify({ month }),
       });
     } catch (err) {
-      console.error('Failed to set active month:', err);
+      console.error('Failed to set active period:', err);
     }
   };
 
@@ -190,7 +222,7 @@ export default function Home() {
     const formData = new FormData();
     formData.append('file', ingestFile);
     formData.append('dataset_type', ingestType);
-    formData.append('month', ingestMonth);
+    formData.append('month', `${ingestYear}/${ingestMonth}`);
     formData.append('passcode', ingestPasscode);
 
     try {
@@ -206,13 +238,14 @@ export default function Home() {
         if (dRes.ok) {
           const dData = await dRes.json();
           setAvailableDatasets(dData.datasets);
+          if (dData.years) setAvailableYears(dData.years);
         }
         setTimeout(() => {
           setShowUploadModal(false);
           setIngestStatus('');
         }, 1500);
       } else {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({ error: 'Upload rejected' }));
         setIngestStatus(err.error || 'Upload rejected. Check Controller Passcode.');
       }
     } catch {
@@ -334,19 +367,29 @@ export default function Home() {
   return (
     <div className="flex flex-col min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-blue-600 selection:text-white">
       {/* Top Enterprise Navigation Bar */}
-      <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-6 py-3.5 flex flex-wrap items-center justify-between gap-4 shadow-xl">
+      <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-6 py-3 flex flex-wrap items-center justify-between gap-4 shadow-xl">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20 font-black text-white text-lg">
-            ₹
+          {/* Next.js Logo Mark */}
+          <div className="w-8 h-8 rounded-lg bg-slate-950 border border-slate-700 flex items-center justify-center shadow-md">
+            <svg className="w-5 h-5 text-white" viewBox="0 0 180 180" fill="none">
+              <mask id="mask0_next" style={{ maskType: "alpha" }} maskUnits="userSpaceOnUse" x="0" y="0" width="180" height="180">
+                <circle cx="90" cy="90" r="90" fill="black"/>
+              </mask>
+              <g mask="url(#mask0_next)">
+                <circle cx="90" cy="90" r="90" fill="black" stroke="white" strokeWidth="6"/>
+                <path d="M149.508 157.52L69.142 54H54V125.97H66.1136V69.3836L139.999 164.845C143.333 162.614 146.509 160.16 149.508 157.52Z" fill="white"/>
+                <rect x="115" y="54" width="12" height="72" fill="white"/>
+              </g>
+            </svg>
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-base font-bold tracking-tight text-white">Razorpay Reconciler</h1>
+              <h1 className="text-sm font-bold tracking-tight text-white">AI Finance Controller</h1>
               <span className="px-2 py-0.5 text-[10px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full">
-                AI Finance Controller · Track 04
+                Multi-Source Reconciler · Track 04
               </span>
             </div>
-            <p className="text-xs text-slate-400">Autonomous Multi-Source Reconciliation & Cash Forecasting</p>
+            <p className="text-[11px] text-slate-400">Autonomous Financial Reconciliation & Cash Position Engine</p>
           </div>
         </div>
 
@@ -374,27 +417,82 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Right: Active Audit Cycle Selector & Ingestion Hub */}
+        {/* Right: Hierarchical Calendar / Period Selector & Ingestion Hub */}
         <div className="flex items-center gap-2.5">
-          <div className="flex items-center gap-2 bg-slate-800/90 border border-slate-700 px-3 py-1.5 rounded-lg text-xs">
-            <span className="text-slate-400 font-medium">Audit Cycle:</span>
-            <select
-              value={activeMonth}
-              onChange={(e) => handleSwitchMonth(e.target.value)}
-              className="bg-slate-900 text-blue-400 font-semibold rounded px-2 py-0.5 border border-slate-700 outline-none cursor-pointer hover:border-blue-500 transition-colors"
+          {/* Hierarchical Year/Month Calendar Selector */}
+          <div className="relative" ref={calendarRef}>
+            <button
+              onClick={() => setShowCalendarDropdown(!showCalendarDropdown)}
+              className="flex items-center gap-2 bg-slate-800/90 hover:bg-slate-800 text-slate-200 border border-slate-700 hover:border-blue-500/50 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors shadow-sm"
             >
-              {availableDatasets.map((d) => (
-                <option key={d.month} value={d.month}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
+              <span className="text-blue-400">📅</span>
+              <span>{selectedYear} · <span className="capitalize">{activeMonth}</span></span>
+              <span className="text-slate-400 text-[10px]">▼</span>
+            </button>
+
+            {/* Hierarchical Calendar Dropdown */}
+            {showCalendarDropdown && (
+              <div className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-4 z-50 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                  <span className="text-xs font-bold text-slate-300">Select Audit Period</span>
+                  {/* Year Switcher */}
+                  <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                    {availableYears.map((yr) => (
+                      <button
+                        key={yr}
+                        onClick={() => setSelectedYear(yr)}
+                        className={`px-2 py-0.5 text-[11px] font-bold rounded transition-colors ${
+                          selectedYear === yr
+                            ? 'bg-blue-600 text-white'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {yr}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 12 Months Grid */}
+                <div className="grid grid-cols-3 gap-1.5">
+                  {MONTH_NAMES.map((m) => {
+                    const hasData = availableDatasets.some(
+                      (d) => (d.year === selectedYear || !d.year) && d.month === m
+                    );
+                    const isSelected = selectedYear === selectedYear && activeMonth === m;
+
+                    return (
+                      <button
+                        key={m}
+                        onClick={() => handleSelectPeriod(selectedYear, m)}
+                        className={`p-2 rounded-xl text-xs font-semibold flex flex-col items-center justify-center gap-1 transition-all ${
+                          isSelected
+                            ? 'bg-blue-600 text-white font-bold shadow-md shadow-blue-600/30'
+                            : hasData
+                            ? 'bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700/60'
+                            : 'bg-slate-950/40 text-slate-500 hover:bg-slate-800/30 hover:text-slate-400'
+                        }`}
+                      >
+                        <span className="capitalize">{m.slice(0, 3)}</span>
+                        {hasData && (
+                          <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-emerald-400'}`} />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[10px] text-slate-400">
+                  <span>● Green dot = Statement data present</span>
+                </div>
+              </div>
+            )}
           </div>
 
+          {/* Ingest Statement Button */}
           <button
             onClick={() => setShowUploadModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-blue-500 rounded-lg transition-all shadow-sm"
-            title="Upload new bank statement or settlement CSV"
           >
             📥 Ingest Statement
           </button>
@@ -415,20 +513,23 @@ export default function Home() {
               <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
                 <div>
                   <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                    📄 PDF Invoice Extractor & Bank Settlement Matcher
+                    📄 PDF Invoice Extractor & Settlement Reconciler
                   </h2>
                   <p className="text-sm text-slate-400 mt-1 max-w-2xl">
-                    Upload multi-page invoice PDFs to extract structured line items, reconcile against Razorpay gateway settlements & bank statements, and resolve Many-to-One lump sum batches in DuckDB.
+                    Extract multi-page invoice records via Groq Llama 3.3 70B, match against active banking ledgers, and resolve Many-to-One lump-sum settlement batches in DuckDB.
                   </p>
                   
                   {/* Current Active Dataset Badges */}
                   <div className="flex flex-wrap items-center gap-2 mt-3 text-xs">
-                    <span className="text-slate-400">Target Statements:</span>
-                    <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md font-mono">
-                      ✓ bank_statement_{activeMonth}.csv
+                    <span className="text-slate-400">Active Period:</span>
+                    <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-md font-mono font-bold">
+                      📁 {selectedYear} / {activeMonth}
                     </span>
-                    <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-md font-mono">
-                      ✓ razorpay_settlements_{activeMonth}.csv
+                    <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md font-mono">
+                      ✓ bank_statement.csv
+                    </span>
+                    <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md font-mono">
+                      ✓ razorpay_settlements.csv
                     </span>
                   </div>
                 </div>
@@ -486,19 +587,19 @@ export default function Home() {
                 <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg relative overflow-hidden">
                   <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400">Matched Invoices</p>
                   <p className="text-3xl font-black text-emerald-400 mt-1">{pdfResult.reconciliation.matched_count}</p>
-                  <p className="text-xs text-emerald-500/80 mt-2">Exact, Fuzzy & Many-to-One Matches</p>
+                  <p className="text-xs text-emerald-500/80 mt-2">Exact, Fuzzy & Many-to-One</p>
                 </div>
 
                 <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg relative overflow-hidden">
                   <p className="text-xs font-semibold uppercase tracking-wider text-rose-400">Flagged Exceptions</p>
                   <p className="text-3xl font-black text-rose-400 mt-1">{pdfResult.reconciliation.exception_count}</p>
-                  <p className="text-xs text-rose-500/80 mt-2">Requires Controller Investigation</p>
+                  <p className="text-xs text-rose-500/80 mt-2">Requires Controller Review</p>
                 </div>
 
                 <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg relative overflow-hidden">
                   <p className="text-xs font-semibold uppercase tracking-wider text-blue-400">Reconciled Against</p>
                   <p className="text-xs font-mono font-bold text-blue-300 mt-2 truncate" title={pdfResult.reconciliation.source_dataset}>
-                    📊 {pdfResult.reconciliation.source_dataset || `${activeMonth} Statement Batch`}
+                    📊 {pdfResult.reconciliation.source_dataset || `${selectedYear}/${activeMonth}`}
                   </p>
                   <span className="inline-block mt-3 px-2 py-0.5 text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-md">
                     DuckDB SQL Engine
@@ -547,20 +648,15 @@ export default function Home() {
                     </tbody>
                   </table>
                 </div>
-                {pdfResult.records.length > 15 && (
-                  <p className="text-xs text-center text-slate-500">
-                    Showing 15 of {pdfResult.records.length} records. Download Audit Report for the complete ledger.
-                  </p>
-                )}
               </div>
             )}
 
-            {/* Exceptions & Actionable Guidance Table */}
+            {/* Exceptions Table */}
             {pdfResult && pdfResult.reconciliation.exceptions.length > 0 && (
               <div className="bg-slate-900 border border-rose-900/40 rounded-2xl p-6 shadow-xl space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-base font-bold text-rose-400 flex items-center gap-2">
-                    ⚠️ Reconciliation Exceptions & Anomaly Guidance ({pdfResult.reconciliation.exceptions.length})
+                    ⚠️ Reconciliation Exceptions & Action Items ({pdfResult.reconciliation.exceptions.length})
                   </h3>
                   <span className="text-xs text-rose-400/80 font-medium">Categorized Anomaly Action Items</span>
                 </div>
@@ -604,7 +700,7 @@ export default function Home() {
         {/* TAB 2: AI FINANCE CONTROLLER AGENT CHAT */}
         {/* ============================================================ */}
         {activeTab === 'chat' && (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100vh-140px)]">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100vh-130px)]">
             {/* Left Knowledge Base & Prompt Chips */}
             <div className="lg:col-span-1 bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between shadow-xl space-y-4">
               <div className="space-y-4">
@@ -613,7 +709,7 @@ export default function Home() {
                     🧠 Hybrid AI Agent
                   </h3>
                   <p className="text-xs text-slate-400 mt-1">
-                    Powered by LangGraph router, DuckDB text-to-SQL, and PGVector dense semantic search.
+                    Powered by LangGraph router, DuckDB SQL Engine, and PGVector dense semantic search.
                   </p>
                 </div>
 
@@ -644,7 +740,7 @@ export default function Home() {
                     'Why was REF1004 flagged as an anomaly?',
                     'Project upcoming cash settlement inflows for next week',
                     'Show all exceptions with amounts above ₹1,000',
-                    'Summarize the August reconciliation batch',
+                    `Summarize the ${activeMonth} reconciliation batch`,
                   ].map((prompt, idx) => (
                     <button
                       key={idx}
@@ -659,7 +755,7 @@ export default function Home() {
 
               {/* Status Info */}
               <div className="pt-3 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
-                <span>Active Cycle: <b className="text-blue-400 capitalize">{activeMonth}</b></span>
+                <span>Active Period: <b className="text-blue-400 capitalize">{selectedYear} / {activeMonth}</b></span>
                 <span className="text-emerald-400">● Live DuckDB</span>
               </div>
             </div>
@@ -698,7 +794,7 @@ export default function Home() {
                         }`}
                       >
                         {m.content ? (
-                          <div className="prose prose-invert prose-xs max-w-none">
+                          <div className="markdown-chat">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>
                               {formatMessageForMarkdown(m.content)}
                             </ReactMarkdown>
@@ -741,7 +837,7 @@ export default function Home() {
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask a question (e.g. 'What is the net projected payout next week?')..."
+                  placeholder={`Ask a question about ${selectedYear}/${activeMonth} reconciliations...`}
                   className="flex-1 bg-slate-900 text-xs text-white border border-slate-800 focus:border-blue-500 rounded-xl px-4 py-2.5 outline-none transition-colors"
                 />
                 <button
@@ -758,7 +854,7 @@ export default function Home() {
       </main>
 
       {/* ============================================================ */}
-      {/* MODAL: INGESTION HUB (Multi-Source Statement Uploader) */}
+      {/* MODAL: INGESTION HUB (Hierarchical Multi-Source Statement Uploader) */}
       {/* ============================================================ */}
       {showUploadModal && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
@@ -776,7 +872,7 @@ export default function Home() {
             </div>
 
             <p className="text-xs text-slate-400 leading-relaxed">
-              Upload bank statement CSVs, Razorpay settlement reports, or invoices for any month. They will be immediately available to DuckDB and the AI Controller with zero container restarts.
+              Upload bank statement CSVs, Razorpay settlement reports, or invoices for any year/month. Files are organized into hierarchical folders (`data/&lt;year&gt;/&lt;month&gt;/`) and synced immediately with DuckDB.
             </p>
 
             <form onSubmit={handleIngestDataset} className="space-y-3.5 text-xs">
@@ -793,16 +889,34 @@ export default function Home() {
                 </select>
               </div>
 
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Target Statement Month</label>
-                <input
-                  type="text"
-                  value={ingestMonth}
-                  onChange={(e) => setIngestMonth(e.target.value)}
-                  placeholder="e.g. august, september, october"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none focus:border-blue-500"
-                  required
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Year</label>
+                  <select
+                    value={ingestYear}
+                    onChange={(e) => setIngestYear(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none focus:border-blue-500"
+                  >
+                    <option value="2026">2026</option>
+                    <option value="2025">2025</option>
+                    <option value="2024">2024</option>
+                    <option value="2023">2023</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Month</label>
+                  <select
+                    value={ingestMonth}
+                    onChange={(e) => setIngestMonth(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none focus:border-blue-500 capitalize"
+                  >
+                    {MONTH_NAMES.map((m) => (
+                      <option key={m} value={m} className="capitalize">
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div>

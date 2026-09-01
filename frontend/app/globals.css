@@ -1,1 +1,122 @@
 @import "tailwindcss";
+
+/* Custom Dark Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #020617;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3b82f6;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1e293b #020617;
+}
+
+/* Markdown Chat Typography */
+.markdown-chat h1,
+.markdown-chat h2,
+.markdown-chat h3,
+.markdown-chat h4 {
+  font-weight: 700;
+  margin-top: 0.75rem;
+  margin-bottom: 0.35rem;
+  color: #f8fafc;
+}
+
+.markdown-chat h1 { font-size: 1.05rem; }
+.markdown-chat h2 { font-size: 0.95rem; }
+.markdown-chat h3 { font-size: 0.85rem; }
+
+.markdown-chat p {
+  margin-bottom: 0.5rem;
+  line-height: 1.55;
+  color: #e2e8f0;
+}
+
+.markdown-chat p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-chat ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin: 0.35rem 0 0.5rem 0;
+}
+
+.markdown-chat ol {
+  list-style-type: decimal;
+  padding-left: 1.25rem;
+  margin: 0.35rem 0 0.5rem 0;
+}
+
+.markdown-chat li {
+  margin-bottom: 0.25rem;
+  color: #cbd5e1;
+}
+
+.markdown-chat strong {
+  font-weight: 700;
+  color: #93c5fd;
+}
+
+.markdown-chat code {
+  background-color: #090d16;
+  color: #93c5fd;
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.25rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85em;
+  border: 1px solid #1e293b;
+}
+
+.markdown-chat pre {
+  background-color: #020617;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  border: 1px solid #1e293b;
+  margin: 0.5rem 0;
+}
+
+.markdown-chat table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.6rem 0;
+  font-size: 0.75rem;
+}
+
+.markdown-chat th,
+.markdown-chat td {
+  border: 1px solid #334155;
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+
+.markdown-chat th {
+  background-color: #0f172a;
+  color: #60a5fa;
+  font-weight: 700;
+}
+
+.markdown-chat tr:nth-child(even) {
+  background-color: #020617;
+}
+
+.markdown-chat blockquote {
+  border-left: 3px solid #3b82f6;
+  padding-left: 0.75rem;
+  color: #94a3b8;
+  margin: 0.5rem 0;
+}
