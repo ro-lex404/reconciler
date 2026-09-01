@@ -197,19 +197,46 @@ async def upload_finance_dataset(
     passcode: str = Form(""),
 ):
     """Uploads a bank statement CSV, Razorpay CSV, or Invoice PDF directly to the data folder."""
-    if passcode and passcode.strip() not in ["admin", "controller", "razorpay2026", "secret", ""]:
-        return JSONResponse({"error": "Unauthorized: Invalid Controller Passcode"}, status_code=401)
+    valid_passcodes = ["admin", "controller", "controller2026", "razorpay2026", "secret", "password"]
+    if not passcode or passcode.strip().lower() not in valid_passcodes:
+        return JSONResponse({"error": "Unauthorized: Invalid Finance Controller Passcode."}, status_code=401)
 
-    from app.services.reconciliation import default_finance_data_dir
+    from app.services.reconciliation import default_finance_data_dir, set_active_period
     root_data = default_finance_data_dir()
     month_clean = month.strip().lower().replace("\\", "/")
     target_dir = root_data / Path(month_clean)
     target_dir.mkdir(parents=True, exist_ok=True)
 
     file_bytes = await file.read()
+    
+    # Save original filename
     dest_path = target_dir / file.filename
     with open(dest_path, "wb") as f:
         f.write(file_bytes)
+
+    # Also save canonical filename for immediate DuckDB auto-discovery
+    m_name = Path(month_clean).name
+    if dataset_type == "bank":
+        with open(target_dir / "bank_statement.csv", "wb") as f:
+            f.write(file_bytes)
+        with open(target_dir / f"bank_statement_{m_name}.csv", "wb") as f:
+            f.write(file_bytes)
+    elif dataset_type == "razorpay":
+        with open(target_dir / "razorpay_settlements.csv", "wb") as f:
+            f.write(file_bytes)
+        with open(target_dir / f"razorpay_settlements_{m_name}.csv", "wb") as f:
+            f.write(file_bytes)
+    elif dataset_type == "invoice":
+        with open(target_dir / "invoices.pdf", "wb") as f:
+            f.write(file_bytes)
+        with open(target_dir / f"invoices_{m_name}.pdf", "wb") as f:
+            f.write(file_bytes)
+
+    parts = month_clean.split("/")
+    if len(parts) >= 2:
+        set_active_period(parts[0], parts[1])
+    else:
+        set_active_period("2026", parts[0])
 
     return {
         "status": "success",

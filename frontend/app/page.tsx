@@ -53,6 +53,8 @@ interface ReconciliationData {
   exception_count: number;
   engine: string;
   source_dataset?: string;
+  detected_year?: string;
+  detected_month?: string;
   matches: MatchRecord[];
   exceptions: ExceptionRecord[];
 }
@@ -120,12 +122,28 @@ export default function Home() {
   const [ingestStatus, setIngestStatus] = useState<string>('');
   const [isIngesting, setIsIngesting] = useState<boolean>(false);
 
-  // --- RAG Chat State ---
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // --- RAG Chat State with Session Persistence ---
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = sessionStorage.getItem('reconciler_chat_history');
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return [];
+  });
   const [input, setInput] = useState('');
   const [kbFile, setKbFile] = useState<File | null>(null);
   const [uploadStatus, setUploadStatus] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && messages.length > 0) {
+      try {
+        sessionStorage.setItem('reconciler_chat_history', JSON.stringify(messages));
+      } catch {}
+    }
+  }, [messages]);
 
   // --- PDF Reconciliation State ---
   const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -231,8 +249,11 @@ export default function Home() {
         body: formData,
       });
       if (res.ok) {
-        setIngestStatus('Statement batch saved & synced with DuckDB!');
+        setIngestStatus(`Statement batch saved successfully for ${ingestYear}/${ingestMonth}!`);
         setIngestFile(null);
+        setSelectedYear(ingestYear);
+        setActiveMonth(ingestMonth);
+        
         // Refresh datasets list
         const dRes = await fetch(`${getApiBaseUrl()}/finance/datasets`);
         if (dRes.ok) {
@@ -245,11 +266,11 @@ export default function Home() {
           setIngestStatus('');
         }, 1500);
       } else {
-        const err = await res.json().catch(() => ({ error: 'Upload rejected' }));
-        setIngestStatus(err.error || 'Upload rejected. Check Controller Passcode.');
+        const err = await res.json().catch(() => ({ error: 'Upload rejected by server.' }));
+        setIngestStatus(`⚠️ ${err.error || 'Upload failed. Check Controller Passcode.'}`);
       }
     } catch {
-      setIngestStatus('Error uploading dataset to backend.');
+      setIngestStatus('⚠️ Network error connecting to backend API.');
     } finally {
       setIsIngesting(false);
     }
@@ -270,7 +291,11 @@ export default function Home() {
       const res = await fetch(`${getApiBaseUrl()}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: userMessage }),
+        body: JSON.stringify({
+          query: userMessage,
+          year: selectedYear,
+          month: activeMonth,
+        }),
       });
       if (!res.ok) throw new Error(`Chat request failed with status ${res.status}`);
 
@@ -314,7 +339,15 @@ export default function Home() {
       if (res.ok) {
         const data: ExtractPDFResponse = await res.json();
         setPdfResult(data);
-        setPdfStatus(`Reconciliation complete! Processed ${data.extracted_count} invoices from ${data.source}.`);
+        const detMonth = data.reconciliation?.detected_month;
+        const detYear = data.reconciliation?.detected_year;
+        if (detMonth) {
+          setActiveMonth(detMonth);
+          if (detYear) setSelectedYear(detYear);
+          setPdfStatus(`Reconciliation complete! Auto-detected & switched active period to ${detMonth.toUpperCase()} ${detYear || selectedYear} (Processed ${data.extracted_count} invoices).`);
+        } else {
+          setPdfStatus(`Reconciliation complete! Processed ${data.extracted_count} invoices from ${data.source}.`);
+        }
       } else {
         setPdfStatus(`PDF Extraction failed (${res.status}).`);
       }
@@ -932,7 +965,7 @@ export default function Home() {
 
               <div>
                 <label className="block text-slate-300 font-semibold mb-1">
-                  Finance Controller Passcode <span className="text-slate-500 font-normal">(Default: admin)</span>
+                  Finance Controller Passcode
                 </label>
                 <input
                   type="password"
@@ -940,6 +973,7 @@ export default function Home() {
                   onChange={(e) => setIngestPasscode(e.target.value)}
                   placeholder="Enter controller passcode"
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none focus:border-blue-500"
+                  required
                 />
               </div>
 

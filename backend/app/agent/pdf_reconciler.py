@@ -41,19 +41,56 @@ class PDFReconcilerState(TypedDict):
 
 # --- 3. LangGraph Nodes ---
 def extract_pdf_text_node(state: PDFReconcilerState) -> Dict[str, Any]:
-    """Extracts raw text from PDF bytes across all pages using PyPDF."""
+    """Extracts raw text from PDF bytes across all pages using PyPDF with Tesseract OCR fallback for scanned receipts."""
     pdf_bytes = state.get("pdf_bytes")
+    filename = state.get("filename", "").lower()
     if not pdf_bytes:
         return {"full_text": ""}
 
-    reader = PdfReader(io.BytesIO(pdf_bytes))
+    full_text = ""
     page_texts = []
-    for page in reader.pages:
-        extracted = page.extract_text()
-        if extracted:
-            page_texts.append(extracted)
 
-    full_text = "\n".join(page_texts)
+    # 1. If uploaded file is an image (e.g. restaurant receipt .png/.jpg)
+    if any(filename.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"]):
+        try:
+            from PIL import Image
+            import pytesseract
+            img = Image.open(io.BytesIO(pdf_bytes))
+            full_text = pytesseract.image_to_string(img)
+            if full_text.strip():
+                return {"full_text": full_text}
+        except Exception as e:
+            print(f"Image OCR notice: {e}")
+
+    # 2. Extract standard PDF text
+    try:
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        for page in reader.pages:
+            extracted = page.extract_text()
+            if extracted and extracted.strip():
+                page_texts.append(extracted)
+        full_text = "\n".join(page_texts)
+    except Exception as e:
+        print(f"PyPDF reader notice: {e}")
+
+    # 3. If PDF contains 0 or very few text characters (Scanned paper receipt), run OCR fallback
+    if len(full_text.strip()) < 30:
+        try:
+            from PIL import Image
+            import pytesseract
+            reader = PdfReader(io.BytesIO(pdf_bytes))
+            ocr_pages = []
+            for page in reader.pages:
+                for img_obj in page.images:
+                    img = Image.open(io.BytesIO(img_obj.data))
+                    txt = pytesseract.image_to_string(img)
+                    if txt.strip():
+                        ocr_pages.append(txt)
+            if ocr_pages:
+                full_text = "\n".join(ocr_pages)
+        except Exception as e:
+            print(f"Scanned PDF OCR notice: {e}")
+
     return {"full_text": full_text}
 
 
@@ -154,8 +191,30 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
         }
 
     filename = state.get("filename", "")
-    from app.services.reconciliation import resolve_finance_dataset_paths
-    rp_path, bk_path = resolve_finance_dataset_paths(hint_filename=filename)
+    
+    # Auto-detect period from extracted invoice dates or filename
+    detected_month = "july"
+    detected_year = "2026"
+    dates = [str(r.get("date", "")) for r in records if r.get("date")]
+    if any("-08-" in d or "/08/" in d for d in dates):
+        detected_month = "august"
+    elif any("-07-" in d or "/07/" in d for d in dates):
+        detected_month = "july"
+    elif filename:
+        if "aug" in filename.lower():
+            detected_month = "august"
+        elif "jul" in filename.lower():
+            detected_month = "july"
+
+    for d in dates:
+        m_yr = re.search(r"(202\d)", d)
+        if m_yr:
+            detected_year = m_yr.group(1)
+            break
+
+    from app.services.reconciliation import resolve_finance_dataset_paths, set_active_period
+    set_active_period(detected_year, detected_month)
+    rp_path, bk_path = resolve_finance_dataset_paths(hint_filename=detected_month)
     bk_file = bk_path.resolve().as_posix()
     rp_file = rp_path.resolve().as_posix()
 
@@ -287,6 +346,8 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
             "exception_count": len(exceptions),
             "matches": matches,
             "exceptions": exceptions,
+            "detected_year": detected_year,
+            "detected_month": detected_month,
             "source_dataset": f"{rp_path.name} & {bk_path.name}",
             "engine": "DuckDB SQL Vectorized Engine",
         }
