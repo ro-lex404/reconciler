@@ -4,7 +4,14 @@ import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+function getApiBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol;
+    const hostname = window.location.hostname;
+    return `${protocol}//${hostname}:8000`;
+  }
+  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+}
 
 function formatMessageForMarkdown(content: string): string {
   if (!content) return '';
@@ -95,7 +102,7 @@ export default function Home() {
     formData.append('file', kbFile);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/upload`, {
+      const res = await fetch(`${getApiBaseUrl()}/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -122,7 +129,7 @@ export default function Home() {
     setIsChatLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/chat`, {
+      const res = await fetch(`${getApiBaseUrl()}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: userMessage }),
@@ -156,7 +163,7 @@ export default function Home() {
     formData.append('file', pdfFile);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/finance/extract-pdf`, {
+      const res = await fetch(`${getApiBaseUrl()}/finance/extract-pdf`, {
         method: 'POST',
         body: formData,
       });
@@ -183,7 +190,7 @@ export default function Home() {
     setIsExporting(true);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/finance/export-report`, {
+      const res = await fetch(`${getApiBaseUrl()}/finance/export-report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -32,11 +32,11 @@ def _resolve_allowed_origins() -> list[str]:
     configured_origins = {origin.strip() for origin in configured.split(",") if origin.strip()}
     return sorted(default_origins | configured_origins)
 
-# Enable CORS for Next.js
+# Enable CORS for Next.js frontend across any IP or domain
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_resolve_allowed_origins(),
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
