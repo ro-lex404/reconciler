@@ -195,16 +195,19 @@ def synthesizer_node(state: AgentState):
     rag_data = state.get("rag_context", "")
     reconciliation_context = state.get("reconciliation_context", "")
     sources = state.get("sources", [])
-    question = state["question"]
+    question = state.get("question", "")
 
     # Ensure active monthly settlement datasets are cited if reconciliation context is present
     if reconciliation_context:
-        m_tag = "august" if ("aug" in question.lower() or "aug" in reconciliation_context.lower()) else "july"
-        rp_name = f"razorpay_settlements_{m_tag}.csv"
-        bk_name = f"bank_statement_{m_tag}.csv"
-        if not any(s.get("name") == rp_name for s in sources):
-            sources.append({"type": "sql", "name": rp_name, "engine": "DuckDB SQL Engine"})
-            sources.append({"type": "sql", "name": bk_name, "engine": "DuckDB SQL Engine"})
+        try:
+            from app.services.reconciliation import resolve_finance_dataset_paths
+            rp_path, bk_path = resolve_finance_dataset_paths(hint_filename=question)
+            if not any(s.get("name") == rp_path.name for s in sources):
+                sources.append({"type": "sql", "name": rp_path.name, "engine": "DuckDB SQL Engine"})
+            if not any(s.get("name") == bk_path.name for s in sources):
+                sources.append({"type": "sql", "name": bk_path.name, "engine": "DuckDB SQL Engine"})
+        except Exception:
+            pass
 
     groq_api_key = os.getenv("GROQ_API_KEY", "").strip()
 

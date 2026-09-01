@@ -43,6 +43,8 @@ app.add_middleware(
 
 class ChatRequest(BaseModel):
     query: str
+    year: str | None = None
+    month: str | None = None
 
 
 class ReconciliationRequest(BaseModel):
@@ -116,7 +118,19 @@ async def upload_file(file: UploadFile = File(...)):
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
-    reconciliation_context = get_reconciliation_context_summary()
+    from app.services.reconciliation import set_active_period, set_active_month
+    if request.month:
+        if request.year:
+            set_active_period(request.year, request.month)
+        else:
+            set_active_month(request.month)
+    elif any(m in request.query.lower() for m in ["august", "july", "september", "october", "november", "december", "january", "february", "march", "april", "may", "june"]):
+        for m in ["august", "july", "september", "october", "november", "december", "january", "february", "march", "april", "may", "june"]:
+            if m in request.query.lower():
+                set_active_month(m)
+                break
+
+    reconciliation_context = get_reconciliation_context_summary(hint_filename=request.month or request.query)
     inputs = {
         "question": request.query,
         "reconciliation_context": reconciliation_context,
@@ -155,36 +169,41 @@ async def get_datasets():
 
 class SetActiveMonthRequest(BaseModel):
     month: str
+    year: str | None = None
 
 
 @app.post("/finance/set-active-month")
 async def change_active_month(request: SetActiveMonthRequest):
     """Switches the active reconciliation month in memory."""
-    from app.services.reconciliation import set_active_month, reconcile_settlements, resolve_finance_dataset_paths
-    month = set_active_month(request.month)
+    from app.services.reconciliation import set_active_period, set_active_month, reconcile_settlements, resolve_finance_dataset_paths
+    if request.year:
+        set_active_period(request.year, request.month)
+    else:
+        set_active_month(request.month)
+
     try:
         rp, bk = resolve_finance_dataset_paths()
         res = reconcile_settlements(rp, bk)
     except Exception:
         res = None
-    return {"status": "ok", "active_month": month, "reconciliation_summary": res}
+    return {"status": "ok", "active_month": request.month, "active_year": request.year or "2026", "reconciliation_summary": res}
 
 
 @app.post("/finance/upload-dataset")
 async def upload_finance_dataset(
     file: UploadFile = File(...),
     dataset_type: str = Form("bank"),
-    month: str = Form("august"),
+    month: str = Form("2026/august"),
     passcode: str = Form(""),
 ):
     """Uploads a bank statement CSV, Razorpay CSV, or Invoice PDF directly to the data folder."""
-    if passcode and passcode.strip() not in ["admin", "controller", "razorpay2026", "secret"]:
+    if passcode and passcode.strip() not in ["admin", "controller", "razorpay2026", "secret", ""]:
         return JSONResponse({"error": "Unauthorized: Invalid Controller Passcode"}, status_code=401)
 
     from app.services.reconciliation import default_finance_data_dir
     root_data = default_finance_data_dir()
-    month_clean = month.strip().lower()
-    target_dir = root_data / month_clean
+    month_clean = month.strip().lower().replace("\\", "/")
+    target_dir = root_data / Path(month_clean)
     target_dir.mkdir(parents=True, exist_ok=True)
 
     file_bytes = await file.read()
