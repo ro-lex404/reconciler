@@ -3,9 +3,9 @@ import re
 from pathlib import Path
 import duckdb
 
-from fastapi import FastAPI, UploadFile, File, Form, Response
+from fastapi import FastAPI, UploadFile, File, Form, Response, Body, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from app.services.reconciliation import (
     default_finance_data_dir,
@@ -13,11 +13,14 @@ from app.services.reconciliation import (
     verify_reconciliation_integrity,
     get_reconciliation_context_summary,
     resolve_finance_dataset_paths,
+    delete_finance_dataset,
 )
 
 # Import the Celery worker task and compiled LangGraph workflow
 from app.worker import process_document_task
 from app.agent.router import app as agent_app
+
+VALID_PASSCODES = {"admin", "controller", "controller2026", "razorpay2026", "secret", "password"}
 
 app = FastAPI(title="Hybrid AI Analytics API")
 
@@ -50,6 +53,13 @@ class ChatRequest(BaseModel):
 class ReconciliationRequest(BaseModel):
     razorpay_path: str | None = None
     bank_path: str | None = None
+
+
+class DeleteDatasetRequest(BaseModel):
+    passcode: str | None = None
+    year: str | None = None
+    month: str | None = None
+    file_type: str | None = "all"
 
 
 def _collapse_exact_repetition(text: str) -> str:
@@ -197,8 +207,7 @@ async def upload_finance_dataset(
     passcode: str = Form(""),
 ):
     """Uploads a bank statement CSV, Razorpay CSV, or Invoice PDF directly to the data folder."""
-    valid_passcodes = ["admin", "controller", "controller2026", "razorpay2026", "secret", "password"]
-    if not passcode or passcode.strip().lower() not in valid_passcodes:
+    if not passcode or passcode.strip().lower() not in VALID_PASSCODES:
         return JSONResponse({"error": "Unauthorized: Invalid Finance Controller Passcode."}, status_code=401)
 
     from app.services.reconciliation import default_finance_data_dir, set_active_period
@@ -245,6 +254,55 @@ async def upload_finance_dataset(
         "dataset_type": dataset_type,
         "month": month_clean,
     }
+
+
+@app.delete("/finance/dataset")
+async def delete_dataset_endpoint(
+    request: DeleteDatasetRequest | None = Body(None),
+    passcode: str | None = Query(None),
+    year: str | None = Query(None),
+    month: str | None = Query(None),
+    file_type: str | None = Query(None),
+    x_passcode: str | None = Header(None),
+):
+    """Deletes a full monthly statement batch or specific statement files."""
+    req_passcode = request.passcode if request and request.passcode is not None else None
+    req_year = request.year if request and request.year is not None else None
+    req_month = request.month if request and request.month is not None else None
+    req_file_type = request.file_type if request and request.file_type is not None else None
+
+    effective_passcode = req_passcode or passcode or x_passcode or ""
+    effective_year = req_year or year or ""
+    effective_month = req_month or month or ""
+    effective_file_type = req_file_type or file_type or "all"
+
+    if not effective_passcode or str(effective_passcode).strip().lower() not in VALID_PASSCODES:
+        return JSONResponse({"error": "Unauthorized: Invalid Finance Controller Passcode."}, status_code=401)
+
+    # Support compound month path like "2026/august"
+    if "/" in str(effective_month):
+        parts = [p.strip() for p in str(effective_month).replace("\\", "/").split("/") if p.strip()]
+        if len(parts) >= 2:
+            if not effective_year:
+                effective_year = parts[0]
+            effective_month = parts[1]
+        elif len(parts) == 1:
+            effective_month = parts[0]
+
+    if not effective_year or not str(effective_year).strip() or not effective_month or not str(effective_month).strip():
+        return JSONResponse({"error": "Missing required year or month."}, status_code=400)
+
+    try:
+        result = delete_finance_dataset(
+            year=str(effective_year).strip(),
+            month=str(effective_month).strip(),
+            file_type=str(effective_file_type).strip(),
+        )
+        return JSONResponse(result, status_code=200)
+    except FileNotFoundError:
+        return JSONResponse({"error": "Dataset period or file not found."}, status_code=404)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 from app.agent.pdf_reconciler import pdf_reconciler_graph

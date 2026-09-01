@@ -122,6 +122,13 @@ export default function Home() {
   const [ingestStatus, setIngestStatus] = useState<string>('');
   const [isIngesting, setIsIngesting] = useState<boolean>(false);
 
+  // --- Purge / Delete Dataset Modal State ---
+  const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
+  const [deleteScope, setDeleteScope] = useState<string>('all');
+  const [deletePasscode, setDeletePasscode] = useState<string>('');
+  const [deleteStatus, setDeleteStatus] = useState<string>('');
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+
   // --- RAG Chat State with Session Persistence ---
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     if (typeof window !== 'undefined') {
@@ -273,6 +280,46 @@ export default function Home() {
       setIngestStatus('⚠️ Network error connecting to backend API.');
     } finally {
       setIsIngesting(false);
+    }
+  };
+
+  // --- Purge / Delete Dataset Handler ---
+  const handleDeleteDataset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deletePasscode) return;
+    setIsDeleting(true);
+    setDeleteStatus('Purging statement files from disk...');
+
+    try {
+      const res = await fetch(
+        `${getApiBaseUrl()}/finance/dataset?year=${selectedYear}&month=${activeMonth}&file_type=${deleteScope}&passcode=${encodeURIComponent(deletePasscode)}`,
+        { method: 'DELETE' }
+      );
+      if (res.ok) {
+        setDeleteStatus('Dataset purged successfully.');
+        setDeletePasscode('');
+        
+        // Refresh available datasets
+        const dRes = await fetch(`${getApiBaseUrl()}/finance/datasets`);
+        if (dRes.ok) {
+          const dData = await dRes.json();
+          setAvailableDatasets(dData.datasets);
+          if (dData.years) setAvailableYears(dData.years);
+          if (dData.active_month) setActiveMonth(dData.active_month);
+          if (dData.active_year) setSelectedYear(dData.active_year);
+        }
+        setTimeout(() => {
+          setShowDeleteModal(false);
+          setDeleteStatus('');
+        }, 1200);
+      } else {
+        const err = await res.json().catch(() => ({ error: 'Delete failed' }));
+        setDeleteStatus(`⚠️ ${err.error || 'Delete failed. Check Controller Passcode.'}`);
+      }
+    } catch {
+      setDeleteStatus('⚠️ Network error connecting to backend API.');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -468,21 +515,45 @@ export default function Home() {
               <div className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-4 z-50 space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
                   <span className="text-xs font-bold text-slate-300">Select Audit Period</span>
-                  {/* Year Switcher */}
+                  {/* Year Switcher with Horizontal Scroll Navigation */}
                   <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
-                    {availableYears.map((yr) => (
-                      <button
-                        key={yr}
-                        onClick={() => setSelectedYear(yr)}
-                        className={`px-2 py-0.5 text-[11px] font-bold rounded transition-colors ${
-                          selectedYear === yr
-                            ? 'bg-blue-600 text-white'
-                            : 'text-slate-400 hover:text-slate-200'
-                        }`}
-                      >
-                        {yr}
-                      </button>
-                    ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const idx = availableYears.indexOf(selectedYear);
+                        if (idx < availableYears.length - 1) setSelectedYear(availableYears[idx + 1]);
+                      }}
+                      className="px-1 text-slate-400 hover:text-white text-[10px]"
+                      title="Older Year"
+                    >
+                      ◀
+                    </button>
+                    <div className="flex items-center gap-1 max-w-[120px] overflow-x-auto scrollbar-none py-0.5">
+                      {availableYears.map((yr) => (
+                        <button
+                          key={yr}
+                          onClick={() => setSelectedYear(yr)}
+                          className={`px-2 py-0.5 text-[11px] font-bold rounded shrink-0 transition-colors ${
+                            selectedYear === yr
+                              ? 'bg-blue-600 text-white'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          {yr}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const idx = availableYears.indexOf(selectedYear);
+                        if (idx > 0) setSelectedYear(availableYears[idx - 1]);
+                      }}
+                      className="px-1 text-slate-400 hover:text-white text-[10px]"
+                      title="Newer Year"
+                    >
+                      ▶
+                    </button>
                   </div>
                 </div>
 
@@ -528,6 +599,15 @@ export default function Home() {
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-blue-500 rounded-lg transition-all shadow-sm"
           >
             📥 Ingest Statement
+          </button>
+
+          {/* Purge / Delete Dataset Button */}
+          <button
+            onClick={() => setShowDeleteModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-900/60 rounded-lg transition-all shadow-sm"
+            title="Purge statement batch for active period"
+          >
+            🗑️ Purge Period
           </button>
         </div>
       </header>
@@ -1023,6 +1103,84 @@ export default function Home() {
                   className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-lg font-bold shadow-lg shadow-blue-600/20 flex items-center gap-1.5"
                 >
                   {isIngesting ? 'Uploading...' : 'Upload & Sync'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL: PURGE / DELETE DATASET (Period Statement Cleaner) */}
+      {/* ============================================================ */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-rose-900/60 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-rose-400 flex items-center gap-2">
+                🗑️ Purge Accounting Period Dataset
+              </h3>
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="text-slate-400 hover:text-white text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              You are about to purge dataset files for <b className="text-white capitalize">{selectedYear} / {activeMonth}</b>. This will permanently remove statement files from disk and refresh DuckDB tables.
+            </p>
+
+            <form onSubmit={handleDeleteDataset} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Purge Scope</label>
+                <select
+                  value={deleteScope}
+                  onChange={(e) => setDeleteScope(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none focus:border-rose-500"
+                >
+                  <option value="all">Entire Period (All CSVs & PDFs)</option>
+                  <option value="bank">Bank Statement Only</option>
+                  <option value="razorpay">Razorpay Settlement Only</option>
+                  <option value="invoice">Invoices PDF Only</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  Finance Controller Passcode
+                </label>
+                <input
+                  type="password"
+                  value={deletePasscode}
+                  onChange={(e) => setDeletePasscode(e.target.value)}
+                  placeholder="Enter authorized passcode"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none focus:border-rose-500"
+                  required
+                />
+              </div>
+
+              {deleteStatus && (
+                <p className="text-xs text-rose-400 font-medium bg-rose-500/10 p-2 rounded-lg border border-rose-500/20">
+                  {deleteStatus}
+                </p>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!deletePasscode || isDeleting}
+                  className="px-5 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white rounded-lg font-bold shadow-lg shadow-rose-600/20 flex items-center gap-1.5"
+                >
+                  {isDeleting ? 'Purging...' : 'Confirm Purge'}
                 </button>
               </div>
             </form>

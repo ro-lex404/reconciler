@@ -64,59 +64,210 @@ def list_available_datasets() -> dict[str, Any]:
     years_found = set(["2026"])
     
     # 1. Check Year subdirectories (e.g. data/2026/july/, data/2025/august/)
-    for y_dir in root_data.iterdir():
-        if y_dir.is_dir() and re.match(r"^\d{4}$", y_dir.name):
-            year_str = y_dir.name
-            years_found.add(year_str)
-            for m_dir in y_dir.iterdir():
-                if m_dir.is_dir():
-                    m = m_dir.name.lower()
-                    rp = list(m_dir.glob("*.csv"))
-                    bk = [f for f in rp if "bank" in f.name.lower()]
-                    rp = [f for f in rp if "razorpay" in f.name.lower()]
-                    inv = list(m_dir.glob("*.pdf"))
-                    datasets.append({
-                        "year": year_str,
-                        "month": m,
-                        "label": f"{m.capitalize()} {year_str}",
-                        "has_razorpay": len(rp) > 0,
-                        "has_bank": len(bk) > 0,
-                        "has_invoices": len(inv) > 0,
-                        "razorpay_file": rp[0].name if rp else None,
-                        "bank_file": bk[0].name if bk else None,
-                        "invoice_file": inv[0].name if inv else None,
-                        "path": f"{year_str}/{m}",
-                    })
-    
-    # 2. Check flat month directories for backwards compatibility
-    all_months = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
-    for m in all_months:
-        # Check if not already added under 2026
-        if not any(d["year"] == "2026" and d["month"] == m for d in datasets):
-            m_dir = root_data / m if (root_data / m).exists() else None
-            if m_dir and m_dir.exists() and m_dir.is_dir():
-                rp = list(m_dir.glob(f"*{m}*razorpay*.csv")) + list(m_dir.glob(f"razorpay_settlements_{m}.csv")) + list(m_dir.glob("*razorpay*.csv"))
-                bk = list(m_dir.glob(f"*{m}*bank*.csv")) + list(m_dir.glob(f"bank_statement_{m}.csv")) + list(m_dir.glob("*bank*.csv"))
-                inv = list(m_dir.glob(f"*{m}*invoice*.pdf")) + list(m_dir.glob(f"invoices_{m}.pdf")) + list(m_dir.glob("*.pdf"))
-                if rp or bk or inv:
-                    datasets.append({
-                        "year": "2026",
-                        "month": m,
-                        "label": f"{m.capitalize()} 2026",
-                        "has_razorpay": len(rp) > 0,
-                        "has_bank": len(bk) > 0,
-                        "has_invoices": len(inv) > 0,
-                        "razorpay_file": rp[0].name if rp else None,
-                        "bank_file": bk[0].name if bk else None,
-                        "invoice_file": inv[0].name if inv else None,
-                        "path": f"2026/{m}",
-                    })
+    if root_data.exists() and root_data.is_dir():
+        for y_dir in root_data.iterdir():
+            if y_dir.is_dir() and re.match(r"^\d{4}$", y_dir.name):
+                year_str = y_dir.name
+                years_found.add(year_str)
+                for m_dir in y_dir.iterdir():
+                    if m_dir.is_dir():
+                        m = m_dir.name.lower()
+                        all_csvs = list(m_dir.glob("*.csv"))
+                        bk = [f for f in all_csvs if "bank" in f.name.lower()]
+                        rp = [f for f in all_csvs if "razorpay" in f.name.lower()]
+                        inv = list(m_dir.glob("*.pdf"))
+                        if bk or rp or inv:
+                            datasets.append({
+                                "year": year_str,
+                                "month": m,
+                                "label": f"{m.capitalize()} {year_str}",
+                                "has_razorpay": len(rp) > 0,
+                                "has_bank": len(bk) > 0,
+                                "has_invoices": len(inv) > 0,
+                                "razorpay_file": rp[0].name if rp else None,
+                                "bank_file": bk[0].name if bk else None,
+                                "invoice_file": inv[0].name if inv else None,
+                                "path": f"{year_str}/{m}",
+                            })
+        
+        # 2. Check flat month directories for backwards compatibility
+        all_months = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
+        for m in all_months:
+            # Check if not already added under 2026
+            if not any(d["year"] == "2026" and d["month"] == m for d in datasets):
+                m_dir = root_data / m if (root_data / m).exists() else None
+                if m_dir and m_dir.exists() and m_dir.is_dir():
+                    rp = list(m_dir.glob(f"*{m}*razorpay*.csv")) + list(m_dir.glob(f"razorpay_settlements_{m}.csv")) + list(m_dir.glob("*razorpay*.csv"))
+                    bk = list(m_dir.glob(f"*{m}*bank*.csv")) + list(m_dir.glob(f"bank_statement_{m}.csv")) + list(m_dir.glob("*bank*.csv"))
+                    inv = list(m_dir.glob(f"*{m}*invoice*.pdf")) + list(m_dir.glob(f"invoices_{m}.pdf")) + list(m_dir.glob("*.pdf"))
+                    if rp or bk or inv:
+                        datasets.append({
+                            "year": "2026",
+                            "month": m,
+                            "label": f"{m.capitalize()} 2026",
+                            "has_razorpay": len(rp) > 0,
+                            "has_bank": len(bk) > 0,
+                            "has_invoices": len(inv) > 0,
+                            "razorpay_file": rp[0].name if rp else None,
+                            "bank_file": bk[0].name if bk else None,
+                            "invoice_file": inv[0].name if inv else None,
+                            "path": f"2026/{m}",
+                        })
             
     return {
         "active_year": _ACTIVE_YEAR,
         "active_month": _ACTIVE_MONTH,
         "years": sorted(list(years_found), reverse=True),
         "datasets": datasets,
+    }
+
+
+def delete_finance_dataset(
+    year: str,
+    month: str,
+    file_type: str = "all",
+) -> dict[str, Any]:
+    """Deletes a monthly statement dataset directory or individual statement files.
+    
+    If the active period is purged, automatically falls back to the next available dataset.
+    Resets cached PDF reconciliation if the deleted dataset was the source.
+    """
+    global _ACTIVE_YEAR, _ACTIVE_MONTH, LATEST_PDF_RECONCILIATION
+    root_data = default_finance_data_dir()
+
+    year_clean = str(year).strip()
+    month_clean = str(month).strip().lower().replace("\\", "/")
+
+    if "/" in month_clean:
+        parts = [p.strip() for p in month_clean.split("/") if p.strip()]
+        if len(parts) >= 2:
+            year_clean = parts[0]
+            month_clean = parts[1]
+        elif len(parts) == 1:
+            month_clean = parts[0]
+
+    target_dir = root_data / year_clean / month_clean
+    legacy_dir = root_data / month_clean
+
+    candidate_dirs: list[Path] = []
+    if target_dir.exists() and target_dir.is_dir():
+        candidate_dirs.append(target_dir)
+    if legacy_dir.exists() and legacy_dir.is_dir() and legacy_dir.resolve() != target_dir.resolve():
+        candidate_dirs.append(legacy_dir)
+
+    if not candidate_dirs:
+        raise FileNotFoundError(f"Dataset directory for {year_clean}/{month_clean} not found.")
+
+    deleted_paths: list[str] = []
+    scope = (file_type or "all").strip().lower()
+
+    if scope == "all":
+        import shutil
+        for d in candidate_dirs:
+            for item in d.rglob("*"):
+                if item.is_file():
+                    deleted_paths.append(str(item))
+            try:
+                shutil.rmtree(d)
+                deleted_paths.append(str(d))
+            except Exception:
+                for item in d.rglob("*"):
+                    if item.is_file():
+                        try:
+                            item.unlink()
+                        except Exception:
+                            pass
+                try:
+                    d.rmdir()
+                except Exception:
+                    pass
+    else:
+        for d in candidate_dirs:
+            matched_files: list[Path] = []
+            if scope in ("bank", "bank_statement", "bank_statement.csv"):
+                matched_files = (
+                    list(d.glob(f"*{month_clean}*bank*.csv"))
+                    + list(d.glob(f"*bank*{month_clean}*.csv"))
+                    + list(d.glob(f"bank_statement_{month_clean}.csv"))
+                    + list(d.glob("*bank*.csv"))
+                )
+            elif scope in ("razorpay", "razorpay_settlements", "razorpay_settlements.csv"):
+                matched_files = (
+                    list(d.glob(f"*{month_clean}*razorpay*.csv"))
+                    + list(d.glob(f"*razorpay*{month_clean}*.csv"))
+                    + list(d.glob(f"razorpay_settlements_{month_clean}.csv"))
+                    + list(d.glob("*razorpay*.csv"))
+                )
+            elif scope in ("invoice", "invoices", "pdf", "invoices.pdf"):
+                matched_files = (
+                    list(d.glob(f"*{month_clean}*invoice*.pdf"))
+                    + list(d.glob(f"*invoice*{month_clean}*.pdf"))
+                    + list(d.glob(f"invoices_{month_clean}.pdf"))
+                    + list(d.glob("*.pdf"))
+                )
+            else:
+                direct_file = d / file_type
+                if direct_file.exists() and direct_file.is_file():
+                    matched_files = [direct_file]
+                else:
+                    matched_files = list(d.glob(file_type))
+
+            seen = set()
+            unique_files = []
+            for f in matched_files:
+                resolved = f.resolve()
+                if resolved not in seen:
+                    seen.add(resolved)
+                    unique_files.append(f)
+
+            for f in unique_files:
+                if f.exists() and f.is_file():
+                    try:
+                        f.unlink()
+                        deleted_paths.append(str(f))
+                    except Exception:
+                        pass
+
+    if not deleted_paths:
+        raise FileNotFoundError(f"No files matching scope '{file_type}' found in dataset {year_clean}/{month_clean}.")
+
+    # Refresh available datasets
+    refreshed_info = list_available_datasets()
+    refreshed_datasets = refreshed_info.get("datasets", [])
+
+    # Check if active period was purged/invalidated
+    if _ACTIVE_YEAR == year_clean and _ACTIVE_MONTH == month_clean:
+        active_still_exists = any(
+            d.get("year") == year_clean and d.get("month") == month_clean and (d.get("has_bank") or d.get("has_razorpay"))
+            for d in refreshed_datasets
+        )
+        if not active_still_exists or scope == "all":
+            if refreshed_datasets:
+                _ACTIVE_YEAR = refreshed_datasets[0]["year"]
+                _ACTIVE_MONTH = refreshed_datasets[0]["month"]
+            else:
+                _ACTIVE_YEAR = "2026"
+                _ACTIVE_MONTH = "july"
+
+    # Reset cached PDF reconciliation if the deleted dataset was the source
+    if LATEST_PDF_RECONCILIATION is not None:
+        source_fn = str(LATEST_PDF_RECONCILIATION.get("filename") or LATEST_PDF_RECONCILIATION.get("source") or "").lower()
+        if scope in ("all", "invoice", "invoices", "pdf") or month_clean in source_fn or any(Path(p).name.lower() in source_fn for p in deleted_paths):
+            LATEST_PDF_RECONCILIATION = None
+
+    return {
+        "status": "success",
+        "deleted": {
+            "year": year_clean,
+            "month": month_clean,
+            "scope": scope,
+            "deleted_paths": deleted_paths,
+        },
+        "active_period": {
+            "year": _ACTIVE_YEAR,
+            "month": _ACTIVE_MONTH,
+        },
+        "datasets": refreshed_datasets,
     }
 
 
