@@ -6,8 +6,14 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
-# Copy the Next.js application code
+# Copy application code
 COPY . .
 
-# Run the development server
-CMD ["npm", "run", "dev"]
+# Build optimized production bundle
+ENV NODE_ENV=production
+RUN npm run build
+
+EXPOSE 3000
+
+# Run production server with 0% idle CPU and instant response times
+CMD ["npm", "run", "start"]

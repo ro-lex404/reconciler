@@ -214,8 +214,9 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
         FROM pdf_invoices
     """)
 
-    # Match PDF Invoices against Bank Statement
-    matches_df = con.execute("""
+    # 1. Exact & Fuzzy matches
+    con.execute("""
+        CREATE TABLE single_matches AS
         SELECT 
             p.ref as invoice_ref,
             p.amount as invoice_amount,
@@ -233,6 +234,30 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
         FROM clean_pdf_invoices p
         JOIN bank b ON p.ref = b.merchant_ref
         WHERE ABS(p.amount - b.credit_amount) <= 5.0
+    """)
+
+    # 2. Many-to-One Lump Sum Matches (2 invoices -> 1 lump sum bank credit)
+    con.execute("""
+        CREATE TABLE many_to_one_pdf_matches AS
+        SELECT
+            p1.ref || ' + ' || p2.ref as invoice_ref,
+            p1.amount + p2.amount as invoice_amount,
+            p1.invoice_date as invoice_date,
+            b.credit_amount as bank_amount,
+            b.clean_bank_date as bank_date,
+            'MANY_TO_ONE' as match_type,
+            0.92 as confidence
+        FROM clean_pdf_invoices p1
+        JOIN clean_pdf_invoices p2 ON p1.ref < p2.ref
+        JOIN bank b ON ABS((p1.amount + p2.amount) - b.credit_amount) <= 1.0
+        WHERE p1.ref NOT IN (SELECT invoice_ref FROM single_matches)
+          AND p2.ref NOT IN (SELECT invoice_ref FROM single_matches)
+    """)
+
+    matches_df = con.execute("""
+        SELECT * FROM single_matches
+        UNION ALL
+        SELECT * FROM many_to_one_pdf_matches
     """).df()
 
     # Unmatched PDF invoices (Exceptions)
@@ -247,6 +272,9 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
         FROM clean_pdf_invoices p
         LEFT JOIN bank b ON p.ref = b.merchant_ref AND b.merchant_ref != ''
         WHERE b.merchant_ref IS NULL
+          AND p.ref NOT IN (SELECT invoice_ref FROM single_matches)
+          AND p.ref NOT IN (SELECT SPLIT_PART(invoice_ref, ' + ', 1) FROM many_to_one_pdf_matches)
+          AND p.ref NOT IN (SELECT SPLIT_PART(invoice_ref, ' + ', 2) FROM many_to_one_pdf_matches)
     """).df()
 
     matches = matches_df.to_dict(orient="records")

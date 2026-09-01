@@ -84,16 +84,14 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    image: analytics-platform-frontend:latest
     container_name: hybrid_frontend
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
+      - NODE_ENV=production
       - NEXT_PUBLIC_API_URL=http://localhost:8000
-      - WATCHPACK_POLLING=true
-    volumes:
-      - ./frontend:/app               # Hot-reloading
-      - /app/node_modules             # Prevent local node_modules from overwriting container's
     depends_on:
       - api
 

@@ -174,7 +174,29 @@ def reconcile_settlements(
           AND ABS(DATEDIFF('day', r.clean_date, b.clean_date)) <= 2
     """)
 
-    # 4. Pass 3 — Categorized Exceptions
+    # 4. Pass 2.5 — Many-to-One Matches (Lump-sum bank settlement paying multiple invoices)
+    con.execute("""
+        CREATE TABLE many_to_one_matches AS
+        SELECT
+            r1.payment_id || ' + ' || r2.payment_id as payment_id,
+            r1.merchant_ref || ' + ' || r2.merchant_ref as merchant_ref,
+            r1.amount + r2.amount as razorpay_amount,
+            strftime(r1.clean_date, '%Y-%m-%d') as razorpay_date,
+            b.credit_amount as bank_amount,
+            strftime(b.clean_date, '%Y-%m-%d') as bank_date,
+            'MANY_TO_ONE' as match_type,
+            0.92 as confidence,
+            CONCAT('Many-to-one lump-sum batch settlement: combined 2 transactions (', r1.merchant_ref, ' ₹', r1.amount, ' + ', r2.merchant_ref, ' ₹', r2.amount, ')') as explanation
+        FROM razorpay r1
+        JOIN razorpay r2 ON r1.payment_id < r2.payment_id AND ABS(DATEDIFF('day', r1.clean_date, r2.clean_date)) <= 3
+        JOIN bank b ON ABS((r1.amount + r2.amount) - b.credit_amount) <= 1.0 AND ABS(DATEDIFF('day', r1.clean_date, b.clean_date)) <= 3
+        WHERE r1.payment_id NOT IN (SELECT payment_id FROM exact_matches)
+          AND r2.payment_id NOT IN (SELECT payment_id FROM exact_matches)
+          AND r1.payment_id NOT IN (SELECT payment_id FROM fuzzy_matches)
+          AND r2.payment_id NOT IN (SELECT payment_id FROM fuzzy_matches)
+    """)
+
+    # 5. Pass 3 — Categorized Exceptions
     con.execute("""
         CREATE TABLE exceptions AS
         -- Missing bank entry (Razorpay payment with no matching bank reference)
@@ -189,6 +211,8 @@ def reconcile_settlements(
         FROM razorpay r
         LEFT JOIN bank b ON r.merchant_ref = b.merchant_ref AND b.merchant_ref != ''
         WHERE b.merchant_ref IS NULL
+          AND r.payment_id NOT IN (SELECT payment_id FROM exact_matches)
+          AND r.payment_id NOT IN (SELECT payment_id FROM fuzzy_matches)
         
         UNION ALL
         
@@ -226,14 +250,17 @@ def reconcile_settlements(
             'HIGH' as severity,
             'Flag for compliance review — credit with no Razorpay record' as recommended_action
         FROM bank b
-        WHERE b.merchant_ref = '' OR b.merchant_ref IS NULL
+        WHERE (b.merchant_ref = '' OR b.merchant_ref IS NULL)
+          AND b.bank_ref NOT IN (SELECT bank_ref FROM exact_matches)
     """)
 
-    # 5. Extract results as dictionaries
+    # 6. Extract results as dictionaries
     matches_df = con.execute("""
         SELECT * FROM exact_matches
         UNION ALL
         SELECT * FROM fuzzy_matches
+        UNION ALL
+        SELECT * FROM many_to_one_matches
     """).df()
 
     exceptions_df = con.execute("SELECT * FROM exceptions").df()
