@@ -12,6 +12,7 @@ from langchain_community.vectorstores import PGVector
 from app.services.duckdb_client import execute_text_to_sql
 import os
 import glob
+from pathlib import Path
 import duckdb
 
 # ==========================================

@@ -235,7 +235,7 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
                 "detected_month": detected_month,
             }
         }
-    rp_path, bk_path = resolve_finance_dataset_paths(hint_filename=detected_month)
+    rp_path, bk_path = resolve_finance_dataset_paths(hint_filename=f"{detected_year}/{detected_month}")
     bk_file = bk_path.resolve().as_posix()
     rp_file = rp_path.resolve().as_posix()
 

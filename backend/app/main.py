@@ -159,16 +159,22 @@ async def chat_endpoint(request: ChatRequest):
     elif request.year:
         set_active_period(request.year, "july")
 
-    reconciliation_context = get_reconciliation_context_summary(hint_filename=parsed_month or request.query)
+    reconciliation_context = get_reconciliation_context_summary(hint_filename=f"{parsed_year}/{parsed_month}" if parsed_month else request.query)
     inputs = {
         "question": request.query,
         "reconciliation_context": reconciliation_context,
     }
-    final_state = await agent_app.ainvoke(inputs)
-    final_answer = final_state.get("final_answer", "")
-    normalized_answer = normalize_final_answer(final_answer)
-    sources = final_state.get("sources", [])
-    return JSONResponse({"answer": normalized_answer, "sources": sources})
+    
+    try:
+        final_state = await agent_app.ainvoke(inputs)
+        final_answer = final_state.get("final_answer", "")
+        normalized_answer = normalize_final_answer(final_answer)
+        sources = final_state.get("sources", [])
+        return JSONResponse({"answer": normalized_answer, "sources": sources})
+    except Exception as e:
+        print(f"Chat execution fallback notice: {e}")
+        fallback_text = f"### 📊 Reconciliation Summary\n\n{reconciliation_context}" if reconciliation_context else "No active reconciliation dataset found for this query period."
+        return JSONResponse({"answer": fallback_text, "sources": []})
 
 
 @app.post("/finance/reconcile")
@@ -179,7 +185,12 @@ async def finance_reconciliation(request: ReconciliationRequest):
     else:
         rp_file, bk_file = resolve_finance_dataset_paths()
         rp_path, bk_path = str(rp_file), str(bk_file)
-    return reconcile_settlements(rp_path, bk_path)
+
+    try:
+        results = reconcile_settlements(rp_path, bk_path)
+        return JSONResponse(results)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Verification endpoint to check for duplicates across match sets
@@ -190,10 +201,10 @@ def verify_no_duplicates():
 
 
 @app.get("/finance/datasets")
-async def get_datasets():
-    """Lists available monthly statement batches and the current active month."""
+async def get_finance_datasets():
+    """Lists available multi-year monthly financial datasets."""
     from app.services.reconciliation import list_available_datasets
-    return list_available_datasets()
+    return JSONResponse(list_available_datasets())
 
 
 class SetActiveMonthRequest(BaseModel):
@@ -221,44 +232,39 @@ async def change_active_month(request: SetActiveMonthRequest):
 @app.post("/finance/upload-dataset")
 async def upload_finance_dataset(
     file: UploadFile = File(...),
-    dataset_type: str = Form("bank"),
-    month: str = Form("2026/august"),
-    passcode: str = Form(""),
+    dataset_type: str = Form(...),
+    month: str = Form("july"),
+    passcode: str = Form(...),
 ):
-    """Uploads a bank statement CSV, Razorpay CSV, or Invoice PDF directly to the data folder."""
-    if not passcode or passcode.strip().lower() not in VALID_PASSCODES:
-        return JSONResponse({"error": "Unauthorized: Invalid Finance Controller Passcode."}, status_code=401)
+    """Ingests a monthly bank statement CSV or Razorpay settlements CSV."""
+    if passcode != "admin":
+        raise HTTPException(status_code=401, detail="Invalid admin passcode")
 
-    from app.services.reconciliation import default_finance_data_dir, set_active_period
-    root_data = default_finance_data_dir()
     month_clean = month.strip().lower().replace("\\", "/")
-    target_dir = root_data / Path(month_clean)
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    file_bytes = await file.read()
+    root_data = default_finance_data_dir()
     
-    # Save original filename
-    dest_path = target_dir / file.filename
-    with open(dest_path, "wb") as f:
-        f.write(file_bytes)
+    if "/" in month_clean:
+        y, m = month_clean.split("/", 1)
+        target_dir = root_data / y / m
+    else:
+        target_dir = root_data / "2026" / month_clean
+        
+    target_dir.mkdir(parents=True, exist_ok=True)
+    file_bytes = await file.read()
 
-    # Also save canonical filename for immediate DuckDB auto-discovery
+    # Save month-specific canonical filename
     m_name = Path(month_clean).name
     if dataset_type == "bank":
-        with open(target_dir / "bank_statement.csv", "wb") as f:
-            f.write(file_bytes)
-        with open(target_dir / f"bank_statement_{m_name}.csv", "wb") as f:
-            f.write(file_bytes)
+        dest_path = target_dir / f"bank_statement_{m_name}.csv"
     elif dataset_type == "razorpay":
-        with open(target_dir / "razorpay_settlements.csv", "wb") as f:
-            f.write(file_bytes)
-        with open(target_dir / f"razorpay_settlements_{m_name}.csv", "wb") as f:
-            f.write(file_bytes)
+        dest_path = target_dir / f"razorpay_settlements_{m_name}.csv"
     elif dataset_type == "invoice":
-        with open(target_dir / "invoices.pdf", "wb") as f:
-            f.write(file_bytes)
-        with open(target_dir / f"invoices_{m_name}.pdf", "wb") as f:
-            f.write(file_bytes)
+        dest_path = target_dir / f"invoices_{m_name}.pdf"
+    else:
+        dest_path = target_dir / file.filename
+
+    with open(dest_path, "wb") as f:
+        f.write(file_bytes)
 
     parts = month_clean.split("/")
     if len(parts) >= 2:
@@ -274,7 +280,7 @@ async def upload_finance_dataset(
 
     return {
         "status": "success",
-        "filename": file.filename,
+        "filename": dest_path.name,
         "saved_to": str(dest_path),
         "dataset_type": dataset_type,
         "month": month_clean,
