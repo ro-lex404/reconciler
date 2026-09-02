@@ -95,14 +95,9 @@ def sql_node(state: AgentState):
         csv_file_path = ""
 
     if not csv_file_path or not os.path.exists(csv_file_path):
-        upload_dir = "/app/uploads"
-        list_of_csvs = glob.glob(os.path.join(upload_dir, "*.csv")) + glob.glob(os.path.join("./uploads", "*.csv"))
-        if list_of_csvs:
-            csv_file_path = max(list_of_csvs, key=os.path.getctime)
-        else:
-            return {"sql_result": "No CSV statement dataset found for active accounting period.", "sources": []}
+        return {"sql_result": "No CSV statement dataset found for active accounting period.", "sources": []}
         
-    csv_name = os.path.basename(csv_file_path)
+    csv_name = f"{Path(csv_file_path).parent.parent.name}/{Path(csv_file_path).parent.name}/{os.path.basename(csv_file_path)}" if Path(csv_file_path).parent.name in ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"] else os.path.basename(csv_file_path)
     sources = [{"type": "sql", "name": csv_name, "engine": "DuckDB SQL Engine"}]
     
     try:
@@ -210,14 +205,14 @@ def synthesizer_node(state: AgentState):
     sources = state.get("sources", [])
     question = state.get("question", "")
 
-    # Ensure active monthly settlement datasets are cited if reconciliation context is present
-    if reconciliation_context:
+    # Ensure active monthly settlement datasets are cited only if dataset files exist on disk
+    if reconciliation_context and "No reconciliation dataset" not in reconciliation_context:
         try:
             from app.services.reconciliation import resolve_finance_dataset_paths
             rp_path, bk_path = resolve_finance_dataset_paths(hint_filename=question)
-            if not any(s.get("name") == rp_path.name for s in sources):
+            if rp_path.exists() and rp_path.is_file() and not any(s.get("name") == rp_path.name for s in sources):
                 sources.append({"type": "sql", "name": rp_path.name, "engine": "DuckDB SQL Engine"})
-            if not any(s.get("name") == bk_path.name for s in sources):
+            if bk_path.exists() and bk_path.is_file() and not any(s.get("name") == bk_path.name for s in sources):
                 sources.append({"type": "sql", "name": bk_path.name, "engine": "DuckDB SQL Engine"})
         except Exception:
             pass

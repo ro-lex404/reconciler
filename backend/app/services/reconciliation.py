@@ -63,7 +63,7 @@ def list_available_datasets() -> dict[str, Any]:
     datasets = []
     years_found = set(["2026"])
     
-    # 1. Check Year subdirectories (e.g. data/2026/july/, data/2025/august/)
+    # Strict Year/Month directory scan (data/<year>/<month>/)
     if root_data.exists() and root_data.is_dir():
         for y_dir in root_data.iterdir():
             if y_dir.is_dir() and re.match(r"^\d{4}$", y_dir.name):
@@ -89,30 +89,6 @@ def list_available_datasets() -> dict[str, Any]:
                                 "invoice_file": inv[0].name if inv else None,
                                 "path": f"{year_str}/{m}",
                             })
-        
-        # 2. Check flat month directories for backwards compatibility
-        all_months = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
-        for m in all_months:
-            # Check if not already added under 2026
-            if not any(d["year"] == "2026" and d["month"] == m for d in datasets):
-                m_dir = root_data / m if (root_data / m).exists() else None
-                if m_dir and m_dir.exists() and m_dir.is_dir():
-                    rp = list(m_dir.glob(f"*{m}*razorpay*.csv")) + list(m_dir.glob(f"razorpay_settlements_{m}.csv")) + list(m_dir.glob("*razorpay*.csv"))
-                    bk = list(m_dir.glob(f"*{m}*bank*.csv")) + list(m_dir.glob(f"bank_statement_{m}.csv")) + list(m_dir.glob("*bank*.csv"))
-                    inv = list(m_dir.glob(f"*{m}*invoice*.pdf")) + list(m_dir.glob(f"invoices_{m}.pdf")) + list(m_dir.glob("*.pdf"))
-                    if rp or bk or inv:
-                        datasets.append({
-                            "year": "2026",
-                            "month": m,
-                            "label": f"{m.capitalize()} 2026",
-                            "has_razorpay": len(rp) > 0,
-                            "has_bank": len(bk) > 0,
-                            "has_invoices": len(inv) > 0,
-                            "razorpay_file": rp[0].name if rp else None,
-                            "bank_file": bk[0].name if bk else None,
-                            "invoice_file": inv[0].name if inv else None,
-                            "path": f"2026/{m}",
-                        })
             
     return {
         "active_year": _ACTIVE_YEAR,
@@ -277,7 +253,8 @@ def resolve_finance_dataset_paths(
     bank_path: str | Path | None = None,
 ) -> tuple[Path, Path]:
     """Dynamically resolves the appropriate razorpay settlements and bank statement CSV files
-    based on year/month hints or hierarchical directory scans.
+    based on year/month hints or directory structure.
+    Strictly enforces hierarchical directory isolation: data/<year>/<month>/ with zero cross-period fallback.
     """
     if razorpay_path and bank_path:
         return Path(razorpay_path), Path(bank_path)
@@ -292,56 +269,45 @@ def resolve_finance_dataset_paths(
             m_yr = re.search(r"(202\d)", lower)
             if m_yr:
                 year = m_yr.group(1)
-        if "aug" in lower:
-            month = "august"
-        elif "jul" in lower:
-            month = "july"
-        elif any(k in lower for k in ["sep", "oct", "nov", "dec", "jan", "feb", "mar", "apr", "may", "jun"]):
-            for k, full_m in [("sep", "september"), ("oct", "october"), ("nov", "november"), ("dec", "december"), ("jan", "january"), ("feb", "february"), ("mar", "march"), ("apr", "april"), ("may", "may"), ("jun", "june")]:
-                if k in lower:
-                    month = full_m
-                    break
+        MONTH_LOOKUP = {
+            "01": "january", "1": "january", "jan": "january", "january": "january",
+            "02": "february", "2": "february", "feb": "february", "february": "february",
+            "03": "march", "3": "march", "mar": "march", "march": "march",
+            "04": "april", "4": "april", "apr": "april", "april": "april",
+            "05": "may", "5": "may", "may": "may",
+            "06": "june", "6": "june", "jun": "june", "june": "june",
+            "07": "july", "7": "july", "jul": "july", "july": "july",
+            "08": "august", "8": "august", "aug": "august", "august": "august",
+            "09": "september", "9": "september", "sep": "september", "september": "september",
+            "10": "october", "oct": "october", "october": "october",
+            "11": "november", "nov": "november", "november": "november",
+            "12": "december", "dec": "december", "december": "december",
+        }
+        for k, full_m in MONTH_LOOKUP.items():
+            if len(k) >= 3 and re.search(r"\b" + k + r"\b", lower):
+                month = full_m
+                break
 
     root_data = default_finance_data_dir()
+    period_dir = root_data / year / month
 
-    # Search candidate directories in priority order:
-    # 1. root / year / month
-    # 2. root / month
-    # 3. root
-    candidate_dirs = [
-        root_data / year / month,
-        root_data / month,
-        root_data,
-    ]
-
-    for d in candidate_dirs:
-        if not d.exists() or not d.is_dir():
-            continue
+    if period_dir.exists() and period_dir.is_dir():
         rp_candidates = (
-            list(d.glob(f"*{month}*razorpay*.csv"))
-            + list(d.glob(f"*razorpay*{month}*.csv"))
-            + list(d.glob(f"razorpay_settlements_{month}.csv"))
-            + list(d.glob("*razorpay*.csv"))
+            list(period_dir.glob("razorpay_settlements.csv"))
+            + list(period_dir.glob(f"razorpay_settlements_{month}.csv"))
+            + list(period_dir.glob("*razorpay*.csv"))
         )
         bk_candidates = (
-            list(d.glob(f"*{month}*bank*.csv"))
-            + list(d.glob(f"*bank*{month}*.csv"))
-            + list(d.glob(f"bank_statement_{month}.csv"))
-            + list(d.glob("*bank*.csv"))
+            list(period_dir.glob("bank_statement.csv"))
+            + list(period_dir.glob(f"bank_statement_{month}.csv"))
+            + list(period_dir.glob("*bank*.csv"))
         )
-        if rp_candidates and bk_candidates:
-            return rp_candidates[0], bk_candidates[0]
+        rp_file = rp_candidates[0] if rp_candidates else period_dir / "razorpay_settlements.csv"
+        bk_file = bk_candidates[0] if bk_candidates else period_dir / "bank_statement.csv"
+        return rp_file, bk_file
 
-    # Fallback
-    fallback_dir = root_data / year / month if (root_data / year / month).exists() else (root_data / month if (root_data / month).exists() else root_data)
-    rp_default = fallback_dir / f"razorpay_settlements_{month}.csv"
-    bk_default = fallback_dir / f"bank_statement_{month}.csv"
-    if not rp_default.exists():
-        rp_default = fallback_dir / "razorpay_settlements.csv"
-    if not bk_default.exists():
-        bk_default = fallback_dir / "bank_statement.csv"
-
-    return rp_default, bk_default
+    # If the period directory does not exist, return expected canonical paths inside that period (do not fall back to root)
+    return period_dir / "razorpay_settlements.csv", period_dir / "bank_statement.csv"
 
 
 def reconcile_settlements(
@@ -637,6 +603,17 @@ def get_reconciliation_context_summary(
         hint = LATEST_PDF_RECONCILIATION.get("filename") or LATEST_PDF_RECONCILIATION.get("source")
 
     rp_file_path, bk_file_path = resolve_finance_dataset_paths(hint, razorpay_path, bank_path)
+    
+    rp_exists = rp_file_path.exists() and rp_file_path.is_file()
+    bk_exists = bk_file_path.exists() and bk_file_path.is_file()
+
+    # Determine period label
+    period_year = rp_file_path.parent.parent.name if rp_file_path.parent.parent.name.isdigit() else _ACTIVE_YEAR
+    period_month = rp_file_path.parent.name if rp_file_path.parent.name in ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"] else _ACTIVE_MONTH
+
+    if not rp_exists and not bk_exists:
+        return f"No reconciliation dataset (bank statement or Razorpay settlements) is available for {period_month.capitalize()} {period_year}."
+
     res = reconcile_settlements(rp_file_path, bk_file_path)
     exceptions = res["exceptions"]
     matches = res["matches"]
