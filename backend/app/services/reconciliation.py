@@ -656,8 +656,9 @@ def get_reconciliation_context_summary(
         matched_cnt = pdf_res.get("matched_count", 0)
         exc_cnt = pdf_res.get("exception_count", 0)
         pdf_exceptions = pdf_res.get("exceptions", [])
+        pdf_unreconciled_amt = sum(float(pe.get("invoice_amount") or 0.0) for pe in pdf_exceptions)
         pdf_sample_lines = []
-        for pe in pdf_exceptions[:4]:
+        for pe in pdf_exceptions[:6]:
             p_ref = pe.get("invoice_ref") or "N/A"
             p_amt = float(pe.get("invoice_amount") or 0.0)
             p_type = pe.get("exception_type") or "UNKNOWN"
@@ -666,30 +667,29 @@ def get_reconciliation_context_summary(
         pdf_sample_str = "\n".join(pdf_sample_lines) if pdf_sample_lines else "  • None"
 
         pdf_context_section = f"""
-Uploaded PDF Invoice Reconciliation (Latest File):
+PDF Invoice Ledger ({period_month.capitalize()} {period_year}):
 - Extracted PDF Invoices: {extracted_cnt}
-- Reconciled PDF Matches: {matched_cnt} ({round(matched_cnt/extracted_cnt*100, 2) if extracted_cnt else 0}%)
-- Unmatched PDF Exceptions: {exc_cnt}
-Sample PDF Exceptions:
-{pdf_sample_str}"""
+- Reconciled Matches: {matched_cnt} ({round(matched_cnt/extracted_cnt*100, 2) if extracted_cnt else 0}%)
+- Unmatched Exceptions: {exc_cnt}
+- Total Unreconciled PDF Invoices: ₹{pdf_unreconciled_amt:,.2f}
+Sample Flagged Invoices:
+{pdf_sample_str}
+"""
 
-    summary_context = f"""Reconciliation Summary:
-- Total Transactions: {res['total_transactions']}
+    summary_context = f"""{pdf_context_section}
+Full Gateway Batch Settlements ({period_month.capitalize()} {period_year}):
+- Total Gateway Transactions: {res['total_transactions']}
 - Matched Transactions: {res['matched_transactions']} ({res['match_rate']}%)
-- Bank Entries: {res['bank_entries']}
+- Bank Statement Entries: {res['bank_entries']}
 - Unmatched Exceptions: {res['exception_count']}
-- Total Unreconciled Variance: ₹{total_unreconciled:,.2f}
+- Total Unreconciled Gateway Discrepancy: ₹{total_unreconciled:,.2f}
 
 Exception Type Breakdown:
 {type_breakdown_str}
-
-Key Flagged Exception Samples:
-{sample_exceptions_str}
 
 Forward Cash Settlement Forecast (7-Day Clearance):
 - Gross Matched Volume: ₹{gross_matched:,.2f}
 - Estimated Gateway Fees (2%): ₹{estimated_fees:,.2f}
 - Estimated GST (18%): ₹{estimated_gst:,.2f}
-- Net Projected Bank Settlement Inflow: ₹{net_projected_payout:,.2f}
-{pdf_context_section}"""
+- Net Projected Bank Settlement Inflow: ₹{net_projected_payout:,.2f}"""
     return summary_context
