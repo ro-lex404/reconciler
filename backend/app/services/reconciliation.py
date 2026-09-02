@@ -441,8 +441,8 @@ def reconcile_settlements(
             ROW_NUMBER() OVER (PARTITION BY r1.payment_id ORDER BY ABS((r1.amount + r2.amount) - b.credit_amount)) as rn1,
             ROW_NUMBER() OVER (PARTITION BY r2.payment_id ORDER BY ABS((r1.amount + r2.amount) - b.credit_amount)) as rn2
         FROM razorpay r1
-        JOIN razorpay r2 ON r1.payment_id < r2.payment_id AND ABS(DATEDIFF('day', r1.clean_date, r2.clean_date)) <= 3
-        JOIN bank b ON ABS((r1.amount + r2.amount) - b.credit_amount) <= 1.0 AND ABS(DATEDIFF('day', r1.clean_date, b.clean_date)) <= 3
+        JOIN razorpay r2 ON r1.payment_id < r2.payment_id
+        JOIN bank b ON ABS((r1.amount + r2.amount) - b.credit_amount) <= 1.0
         WHERE r1.payment_id NOT IN (SELECT payment_id FROM exact_matches)
           AND r2.payment_id NOT IN (SELECT payment_id FROM exact_matches)
           AND r1.payment_id NOT IN (SELECT payment_id FROM fuzzy_matches)
@@ -537,7 +537,7 @@ def reconcile_settlements(
 
     total_transactions = con.execute("SELECT COUNT(*) FROM razorpay").fetchone()[0]
     bank_entries = con.execute("SELECT COUNT(*) FROM bank").fetchone()[0]
-    matched_count = len(matches_df)
+    matched_count = con.execute("SELECT COUNT(*) FROM all_matched_payment_ids").fetchone()[0]
 
     match_rate = round(matched_count / total_transactions * 100, 2) if total_transactions else 0.0
 
@@ -648,48 +648,22 @@ def get_reconciliation_context_summary(
         act = e.get("recommended_action") or "Verify transaction ledger"
         sample_exceptions_lines.append(f"  • {ref} | ₹{amt:,.2f} | {dt} | {exc_type} | {act}")
     sample_exceptions_str = "\n".join(sample_exceptions_lines) if sample_exceptions_lines else "  • No exceptions"
-
-    pdf_context_section = ""
-    if LATEST_PDF_RECONCILIATION:
-        pdf_res = LATEST_PDF_RECONCILIATION.get("reconciliation_results", LATEST_PDF_RECONCILIATION)
-        extracted_cnt = pdf_res.get("pdf_records_extracted", len(LATEST_PDF_RECONCILIATION.get("records", [])))
-        matched_cnt = pdf_res.get("matched_count", 0)
-        exc_cnt = pdf_res.get("exception_count", 0)
-        pdf_exceptions = pdf_res.get("exceptions", [])
-        pdf_unreconciled_amt = sum(float(pe.get("invoice_amount") or 0.0) for pe in pdf_exceptions)
-        pdf_sample_lines = []
-        for pe in pdf_exceptions[:6]:
-            p_ref = pe.get("invoice_ref") or "N/A"
-            p_amt = float(pe.get("invoice_amount") or 0.0)
-            p_type = pe.get("exception_type") or "UNKNOWN"
-            p_act = pe.get("recommended_action") or "Verify invoice"
-            pdf_sample_lines.append(f"  • {p_ref} | ₹{p_amt:,.2f} | {p_type} | {p_act}")
-        pdf_sample_str = "\n".join(pdf_sample_lines) if pdf_sample_lines else "  • None"
-
-        pdf_context_section = f"""
-PDF Invoice Ledger ({period_month.capitalize()} {period_year}):
-- Extracted PDF Invoices: {extracted_cnt}
-- Reconciled Matches: {matched_cnt} ({round(matched_cnt/extracted_cnt*100, 2) if extracted_cnt else 0}%)
-- Unmatched Exceptions: {exc_cnt}
-- Total Unreconciled PDF Invoices: ₹{pdf_unreconciled_amt:,.2f}
-Sample Flagged Invoices:
-{pdf_sample_str}
-"""
-
-    summary_context = f"""{pdf_context_section}
-Full Gateway Batch Settlements ({period_month.capitalize()} {period_year}):
-- Total Gateway Transactions: {res['total_transactions']}
-- Matched Transactions: {res['matched_transactions']} ({res['match_rate']}%)
-- Bank Statement Entries: {res['bank_entries']}
-- Unmatched Exceptions: {res['exception_count']}
-- Total Unreconciled Gateway Discrepancy: ₹{total_unreconciled:,.2f}
+    summary_context = f"""Live Reconciliation Snapshot ({period_month.capitalize()} {period_year}):
+- Total Processed Transactions / Invoices: {res['total_transactions']}
+- Successfully Matched Records: {res['matched_transactions']} ({res['match_rate']}%)
+- Bank Statement Ledger Entries: {res['bank_entries']}
+- Flagged Unreconciled Exceptions: {res['exception_count']}
+- Total Unreconciled Discrepancy Amount: ₹{total_unreconciled:,.2f}
 
 Exception Type Breakdown:
 {type_breakdown_str}
 
-Forward Cash Settlement Forecast (7-Day Clearance):
-- Gross Matched Volume: ₹{gross_matched:,.2f}
-- Estimated Gateway Fees (2%): ₹{estimated_fees:,.2f}
-- Estimated GST (18%): ₹{estimated_gst:,.2f}
+Key Flagged Exception Samples:
+{sample_exceptions_str}
+
+Forward Cash Settlement Forecast (7-Day Clearance Window):
+- Gross Matched Payment Volume: ₹{gross_matched:,.2f}
+- Projected Gateway Fees (2%): ₹{estimated_fees:,.2f}
+- Estimated GST on Fees (18%): ₹{estimated_gst:,.2f}
 - Net Projected Bank Settlement Inflow: ₹{net_projected_payout:,.2f}"""
     return summary_context
