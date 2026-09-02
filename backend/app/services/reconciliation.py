@@ -655,24 +655,22 @@ def get_reconciliation_context_summary(
     estimated_gst = estimated_fees * 0.18
     net_projected_payout = gross_matched - (estimated_fees + estimated_gst)
 
-    exceptions_summary = []
-    for e in exceptions:
+    # Aggregate counts by exception type
+    from collections import Counter
+    type_counts = Counter(e.get("type") or e.get("exception_type") or "UNKNOWN" for e in exceptions)
+    type_breakdown_lines = [f"  • {k}: {v} record(s)" for k, v in type_counts.items()]
+    type_breakdown_str = "\n".join(type_breakdown_lines) if type_breakdown_lines else "  • None"
+
+    # Top sample exceptions (up to 6) for quick reference
+    sample_exceptions_lines = []
+    for e in exceptions[:6]:
         ref = e.get("merchant_ref") or e.get("invoice_ref") or "N/A"
         amt = float(e.get("razorpay_amount") or e.get("amount") or 0.0)
         dt = e.get("date") or e.get("razorpay_date") or "N/A"
-        exc_type = e.get("type") or e.get("exception_type") or "unknown"
-        sev = e.get("severity") or "HIGH"
-        action = e.get("recommended_action") or "Verify with bank statement"
-
-        exceptions_summary.append({
-            "ref": ref,
-            "amount": f"₹{amt:,.2f}",
-            "amount_raw": amt,
-            "date": dt,
-            "type": exc_type,
-            "severity": sev,
-            "recommended_action": action,
-        })
+        exc_type = e.get("type") or e.get("exception_type") or "UNKNOWN"
+        act = e.get("recommended_action") or "Verify transaction ledger"
+        sample_exceptions_lines.append(f"  • {ref} | ₹{amt:,.2f} | {dt} | {exc_type} | {act}")
+    sample_exceptions_str = "\n".join(sample_exceptions_lines) if sample_exceptions_lines else "  • No exceptions"
 
     pdf_context_section = ""
     if LATEST_PDF_RECONCILIATION:
@@ -681,32 +679,40 @@ def get_reconciliation_context_summary(
         matched_cnt = pdf_res.get("matched_count", 0)
         exc_cnt = pdf_res.get("exception_count", 0)
         pdf_exceptions = pdf_res.get("exceptions", [])
-        pdf_matches = pdf_res.get("matches", [])
-        
+        pdf_sample_lines = []
+        for pe in pdf_exceptions[:4]:
+            p_ref = pe.get("invoice_ref") or "N/A"
+            p_amt = float(pe.get("invoice_amount") or 0.0)
+            p_type = pe.get("exception_type") or "UNKNOWN"
+            p_act = pe.get("recommended_action") or "Verify invoice"
+            pdf_sample_lines.append(f"  • {p_ref} | ₹{p_amt:,.2f} | {p_type} | {p_act}")
+        pdf_sample_str = "\n".join(pdf_sample_lines) if pdf_sample_lines else "  • None"
+
         pdf_context_section = f"""
-
-Uploaded PDF Invoice Reconciliation Data (Latest File Processed):
-- Extracted PDF Invoices Count: {extracted_cnt}
+Uploaded PDF Invoice Reconciliation (Latest File):
+- Extracted PDF Invoices: {extracted_cnt}
 - Reconciled PDF Matches: {matched_cnt} ({round(matched_cnt/extracted_cnt*100, 2) if extracted_cnt else 0}%)
-- Unmatched PDF Invoice Exceptions: {exc_cnt}
-- Detailed PDF Exception Records: {pdf_exceptions}
-- PDF Matches Records: {pdf_matches}
-"""
+- Unmatched PDF Exceptions: {exc_cnt}
+Sample PDF Exceptions:
+{pdf_sample_str}"""
 
-    summary_context = f"""Live Reconciliation Metrics (Batch Settlements):
-- Total Transactions Processed: {res['total_transactions']}
-- Successfully Matched Transactions: {res['matched_transactions']} ({res['match_rate']}%)
-- Bank Statement Entries: {res['bank_entries']}
-- Unmatched Exceptions Count: {res['exception_count']}
-- Total Unreconciled Discrepancy Amount: ₹{total_unreconciled:,.2f}
+    summary_context = f"""Reconciliation Summary:
+- Total Transactions: {res['total_transactions']}
+- Matched Transactions: {res['matched_transactions']} ({res['match_rate']}%)
+- Bank Entries: {res['bank_entries']}
+- Unmatched Exceptions: {res['exception_count']}
+- Total Unreconciled Variance: ₹{total_unreconciled:,.2f}
 
-Forward Cash Settlement Forecast (Next 7-Day Clearance Window):
-- Gross Matched Payment Volume: ₹{gross_matched:,.2f}
-- Projected Gateway Fees (2.0% Standard): ₹{estimated_fees:,.2f}
-- Estimated GST on Fees (18.0%): ₹{estimated_gst:,.2f}
+Exception Type Breakdown:
+{type_breakdown_str}
+
+Key Flagged Exception Samples:
+{sample_exceptions_str}
+
+Forward Cash Settlement Forecast (7-Day Clearance):
+- Gross Matched Volume: ₹{gross_matched:,.2f}
+- Estimated Gateway Fees (2%): ₹{estimated_fees:,.2f}
+- Estimated GST (18%): ₹{estimated_gst:,.2f}
 - Net Projected Bank Settlement Inflow: ₹{net_projected_payout:,.2f}
-{pdf_context_section}
-
-Detailed Exception List ({len(exceptions_summary)} records):
-{exceptions_summary}"""
+{pdf_context_section}"""
     return summary_context

@@ -227,17 +227,16 @@ def synthesizer_node(state: AgentState):
     if groq_api_key:
         try:
             llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0.1, groq_api_key=groq_api_key)
-            system_prompt = """You are an intelligent AI Finance Controller for the Razorpay Financial Reconciliation Engine.
-Your goal is to provide precise, professional, and mathematically accurate answers regarding live reconciliation metrics, faulty exceptions, merchant references, unreconciled totals, and forward cash flow forecasting.
+            system_prompt = """You are an intelligent, executive AI Finance Controller for the Razorpay Financial Reconciliation Engine.
+Your goal is to provide concise, direct, professional, and mathematically accurate answers regarding reconciliation metrics, exceptions, transaction references, unreconciled totals, and cash flow forecasting.
 
-CRITICAL RULES:
-1. ALWAYS format monetary amounts using the Indian Rupee symbol (₹) (e.g. ₹54,272.43).
-2. Answer questions about reconciliation results precisely using the LIVE RECONCILIATION DATA provided.
-3. If asked about a specific transaction reference (e.g., REF1004), cite its exact reference ID, amount, date, exception type, severity, and recommended resolution action.
-4. If asked for unreconciled totals or threshold filters (e.g., exceptions above ₹1,000), calculate or list the matching transactions directly from the data.
-5. If asked about projected settlement inflow or cash forecasting, state the projected settlement totals for upcoming clearance windows.
-6. Do not invent or hallucinate transaction IDs not present in the data.
-7. Format responses using clean Markdown (bold text, bullet points, or small markdown tables).
+CRITICAL INSTRUCTIONS:
+1. Answer the question directly without repeating or echoing the user's prompt (NEVER output "Question: ...", "AI Finance Controller Audit Response", or boilerplate headers).
+2. ALWAYS format monetary amounts with the Indian Rupee symbol (₹) (e.g., ₹54,272.43).
+3. Keep responses clean, concise, and executive. Use bullet points or small markdown tables.
+4. DO NOT dump raw Python dictionaries, bracketed lists, or raw JSON data unless the user explicitly asks to "dump raw records" or "show raw JSON".
+5. When asked to summarize a batch or period, provide an executive KPI summary with match rate, exception counts by type, and cash flow projections.
+6. If asked about a specific transaction reference (e.g., REF1004), state its exact amount, date, exception type, and actionable remediation steps.
 """
 
             human_prompt = f"""USER QUESTION: {question}
@@ -260,8 +259,9 @@ CRITICAL RULES:
         except Exception as e:
             print(f"Synthesizer LLM warning: {e}")
 
-    # Fallback response formatting if GROQ_API_KEY is not configured
-    return {"final_answer": f"### AI Finance Controller Audit Response\n\n**Question:** {question}\n\n**Live Reconciliation Data:**\n\n{reconciliation_context}", "sources": sources}
+    # Clean executive fallback response if GROQ_API_KEY is not configured or fails
+    fallback_text = f"### 📊 Reconciliation Summary\n\n{reconciliation_context}" if reconciliation_context else "No active reconciliation dataset found for this query period."
+    return {"final_answer": fallback_text, "sources": sources}
 
 
 # ==========================================

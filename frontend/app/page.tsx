@@ -735,12 +735,14 @@ export default function Home() {
                   <p className="text-xs text-rose-500/80 mt-2">Requires Controller Review</p>
                 </div>
 
-                <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg relative overflow-hidden">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-blue-400">Reconciled Against</p>
-                  <p className="text-xs font-mono font-bold text-blue-300 mt-2 truncate" title={pdfResult.reconciliation.source_dataset}>
-                    📊 {pdfResult.reconciliation.source_dataset || `${selectedYear}/${activeMonth}`}
-                  </p>
-                  <span className="inline-block mt-3 px-2 py-0.5 text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-md">
+                <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg relative overflow-hidden flex flex-col justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-blue-400">Reconciled Against</p>
+                    <p className="text-xs font-mono font-bold text-blue-300 mt-2 break-words leading-relaxed" title={pdfResult.reconciliation.source_dataset}>
+                      📊 {pdfResult.reconciliation.source_dataset || `${selectedYear}/${activeMonth}`}
+                    </p>
+                  </div>
+                  <span className="inline-block mt-3 self-start px-2 py-0.5 text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-md">
                     DuckDB SQL Engine
                   </span>
                 </div>
