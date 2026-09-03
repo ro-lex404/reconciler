@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 import duckdb
 
-from fastapi import FastAPI, UploadFile, File, Form, Response, Body, Query, Header
+from fastapi import FastAPI, UploadFile, File, Form, Response, Body, Query, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -14,7 +14,13 @@ from app.services.reconciliation import (
     get_reconciliation_context_summary,
     resolve_finance_dataset_paths,
     delete_finance_dataset,
+    set_active_period,
+    set_active_month,
+    list_available_datasets,
+    update_latest_pdf_reconciliation,
 )
+from app.agent.pdf_reconciler import pdf_reconciler_graph
+from app.services.pdf_report_generator import generate_reconciliation_pdf_report
 
 # Import the Celery worker task and compiled LangGraph workflow
 from app.worker import process_document_task
@@ -336,9 +342,6 @@ async def delete_dataset_endpoint(
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
-from app.agent.pdf_reconciler import pdf_reconciler_graph
-
-
 @app.post("/finance/extract-pdf")
 async def extract_and_reconcile_pdf(file: UploadFile = File(...)):
     """Extracts invoice records from uploaded PDF and reconciles against bank statements via LangGraph."""
@@ -367,7 +370,6 @@ async def extract_and_reconcile_pdf(file: UploadFile = File(...)):
     final_state = await pdf_reconciler_graph.ainvoke(initial_state)
 
     # Also update in-memory latest PDF reconciliation for immediate chat awareness
-    from app.services.reconciliation import update_latest_pdf_reconciliation
     update_latest_pdf_reconciliation({
         "filename": file.filename,
         "source": file.filename,
@@ -381,9 +383,6 @@ async def extract_and_reconcile_pdf(file: UploadFile = File(...)):
         "records": final_state["extracted_records"],
         "reconciliation": final_state["reconciliation_results"],
     }
-
-
-from app.services.pdf_report_generator import generate_reconciliation_pdf_report
 
 
 class AuditReportRequest(BaseModel):

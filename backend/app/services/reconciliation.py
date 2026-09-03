@@ -510,7 +510,7 @@ def reconcile_settlements(
         
         UNION ALL
         
-        -- Ghost credits (Bank credit entries with no corresponding Razorpay record)
+        -- Ghost credits (Bank credit entries with no merchant ref or ledger record)
         SELECT
             NULL as payment_id,
             b.merchant_ref,
@@ -518,10 +518,25 @@ def reconcile_settlements(
             strftime(b.clean_date, '%Y-%m-%d') as date,
             'GHOST_CREDIT' as type,
             'HIGH' as severity,
-            'Flag for compliance review — credit with no Razorpay record' as recommended_action
+            'Flag for compliance review — unreferenced credit with no Razorpay record' as recommended_action
         FROM bank b
         WHERE (b.merchant_ref = '' OR b.merchant_ref IS NULL)
           AND b.bank_ref NOT IN (SELECT bank_ref FROM exact_matches)
+        
+        UNION ALL
+        
+        -- Missing Invoice (Bank credit has merchant reference, but no Razorpay ledger transaction exists)
+        SELECT
+            NULL as payment_id,
+            b.merchant_ref,
+            b.credit_amount as amount,
+            strftime(b.clean_date, '%Y-%m-%d') as date,
+            'MISSING_INVOICE' as type,
+            'HIGH' as severity,
+            CONCAT('Bank credited reference ', b.merchant_ref, ' has no matching ledger transaction; verify unrecorded gateway payment') as recommended_action
+        FROM bank b
+        WHERE b.merchant_ref != '' AND b.merchant_ref IS NOT NULL
+          AND b.merchant_ref NOT IN (SELECT merchant_ref FROM razorpay WHERE merchant_ref IS NOT NULL AND merchant_ref != '')
     """)
 
     # 6. Extract results as dictionaries

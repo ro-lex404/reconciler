@@ -11,20 +11,12 @@ from reportlab.lib import colors
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
-root_data = Path("../data").resolve()
-july_dir = root_data / "july"
-august_dir = root_data / "august"
-old_july_dir = Path("../razorpay-reconciler/data").resolve()
+root_data = Path(__file__).resolve().parent.parent / "data"
+july_dir = root_data / "2026" / "july"
+august_dir = root_data / "2026" / "august"
 
 july_dir.mkdir(parents=True, exist_ok=True)
 august_dir.mkdir(parents=True, exist_ok=True)
-
-# 1. Copy existing July data into data/july
-if old_july_dir.exists():
-    for f in old_july_dir.glob("*"):
-        if f.is_file():
-            shutil.copy(f, july_dir / f.name)
-            print(f"Copied {f.name} to data/july/")
 
 # 2. Generate August Data
 random.seed(101)

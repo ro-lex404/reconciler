@@ -314,6 +314,7 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
         FROM clean_pdf_invoices p
         JOIN bank b ON p.ref = b.merchant_ref
         WHERE ABS(p.amount - b.credit_amount) <= 5.0
+          AND (p.invoice_date IS NULL OR b.clean_bank_date IS NULL OR ABS(DATEDIFF('day', TRY_CAST(p.invoice_date AS DATE), TRY_CAST(b.clean_bank_date AS DATE))) <= 2)
     """)
 
     # 2. Distinct Many-to-One Lump Sum Matches (2 invoices -> 1 lump sum bank credit)
@@ -362,7 +363,7 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
         SELECT invoice_ref, invoice_amount, invoice_date, bank_amount, bank_date, match_type, confidence FROM many_to_one_pdf_matches
     """).df()
 
-    # 3. Comprehensive & Precise Exceptions Catching 100% of Non-Matched Records
+    # 3. Comprehensive & Precise Exceptions Standardized across 6 Anomaly Classes
     con.execute("""
         CREATE TABLE exceptions AS
         -- Type A: Missing Bank Entry (Invoice never cleared in bank statement)
@@ -380,18 +381,25 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
 
         UNION ALL
 
-        -- Type B: Amount Mismatch (Invoice found in bank statement, but payout differs by > ₹5.00)
+        -- Type B: Amount or Date Mismatch (Invoice found in bank statement, but fails exact/fuzzy matching criteria)
         SELECT
             p.ref as invoice_ref,
             p.amount as invoice_amount,
             p.invoice_date as invoice_date,
-            'AMOUNT_MISMATCH' as exception_type,
+            CASE
+                WHEN ABS(p.amount - b.credit_amount) > 5.0 THEN 'AMOUNT_MISMATCH'
+                WHEN ABS(DATEDIFF('day', TRY_CAST(p.invoice_date AS DATE), TRY_CAST(b.clean_bank_date AS DATE))) > 2 THEN 'DATE_MISMATCH'
+                ELSE 'AMOUNT_MISMATCH'
+            END as exception_type,
             'HIGH' as severity,
-            CONCAT('Bank credited ₹', b.credit_amount, ' vs Invoice ₹', p.amount, ' (₹', ROUND(ABS(p.amount - b.credit_amount), 2), ' variance); verify MDR fee deduction or GST dispute hold') as recommended_action
+            CASE
+                WHEN ABS(p.amount - b.credit_amount) > 5.0 THEN CONCAT('Bank credited ₹', b.credit_amount, ' vs Invoice ₹', p.amount, ' (₹', ROUND(ABS(p.amount - b.credit_amount), 2), ' variance); verify MDR fee deduction or GST dispute hold')
+                ELSE 'Check settlement clearance window / weekend date shift'
+            END as recommended_action
         FROM clean_pdf_invoices p
         JOIN bank b ON p.ref = b.merchant_ref
-        WHERE ABS(p.amount - b.credit_amount) > 5.0
-          AND p.invoice_id NOT IN (SELECT invoice_id FROM all_matched_pdf_ids)
+        WHERE p.invoice_id NOT IN (SELECT invoice_id FROM all_matched_pdf_ids)
+          AND b.merchant_ref != ''
     """)
 
     exceptions_df = con.execute("SELECT * FROM exceptions").df()

@@ -37,21 +37,43 @@ for font_family, reg_path, bold_path in [
             pass
 
 EXCEPTION_TYPE_LABELS = {
-    "unmatched_pdf_invoice": "Invoice Unmatched",
-    "missing_bank_entry": "Missing Bank Entry",
+    # Standard 6 classes
+    "AMOUNT_MISMATCH": "Amount Mismatch",
+    "DATE_MISMATCH": "Date Mismatch",
+    "MISSING_BANK": "Missing Bank Entry",
+    "MISSING_INVOICE": "Missing Invoice / Ledger Record",
+    "DUPLICATE": "Duplicate Record",
+    "GHOST_CREDIT": "Ghost Credit",
+    # Lowercase and legacy aliases
     "amount_mismatch": "Amount Mismatch",
     "date_mismatch": "Date Mismatch",
-    "amount_and_date_mismatch": "Amount & Date Mismatch",
+    "missing_bank": "Missing Bank Entry",
+    "missing_bank_entry": "Missing Bank Entry",
+    "missing_invoice": "Missing Invoice / Ledger Record",
+    "duplicate": "Duplicate Record",
     "ghost_credit": "Ghost Credit",
+    "unmatched_pdf_invoice": "Invoice Unmatched",
+    "amount_and_date_mismatch": "Amount & Date Mismatch",
 }
 
 DEFAULT_RECOMMENDED_ACTIONS = {
-    "unmatched_pdf_invoice": "Invoice recorded in ledger but missing from bank settlement statement. Verify gateway payout clearance.",
+    # Standard 6 classes
+    "AMOUNT_MISMATCH": "Bank credited amount differs from ledger; verify gateway MDR fee deduction or GST dispute hold.",
+    "DATE_MISMATCH": "Settlement date cleared outside standard window; check weekend date shift or holiday delay.",
+    "MISSING_BANK": "Ledger entry missing bank credit; check gateway settlement portal for delayed T+1 payout.",
+    "MISSING_INVOICE": "Bank credit has merchant reference but no corresponding ledger invoice found.",
+    "DUPLICATE": "Multiple entries share the same transaction reference; verify for double-billing or duplicate credit.",
+    "GHOST_CREDIT": "Flag for compliance review — unreferenced bank credit with no corresponding ledger record.",
+    # Lowercase and legacy aliases
+    "amount_mismatch": "Bank credited amount differs from ledger; verify gateway MDR fee deduction or GST dispute hold.",
+    "date_mismatch": "Settlement date cleared outside standard window; check weekend date shift or holiday delay.",
+    "missing_bank": "Ledger entry missing bank credit; check gateway settlement portal for delayed T+1 payout.",
     "missing_bank_entry": "Check bank portal for delayed NEFT settlement (T+1 window).",
-    "amount_mismatch": "Verify GST rounding or gateway fee deduction with merchant.",
-    "date_mismatch": "Check settlement clearance window / weekend date shift.",
+    "missing_invoice": "Bank credit has merchant reference but no corresponding ledger invoice found.",
+    "duplicate": "Multiple entries share the same transaction reference; verify for double-billing or duplicate credit.",
+    "ghost_credit": "Flag for compliance review — unreferenced bank credit with no corresponding ledger record.",
+    "unmatched_pdf_invoice": "Invoice recorded in ledger but missing from bank settlement statement. Verify gateway payout clearance.",
     "amount_and_date_mismatch": "High variance in amount and date; flag for compliance audit.",
-    "ghost_credit": "Flag for compliance review — bank credit entry with no corresponding Razorpay record.",
 }
 
 

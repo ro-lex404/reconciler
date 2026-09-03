@@ -207,7 +207,7 @@ export default function Home() {
       await fetch(`${getApiBaseUrl()}/finance/set-active-month`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ month }),
+        body: JSON.stringify({ year, month }),
       });
     } catch (err) {
       console.error('Failed to set active period:', err);
@@ -820,7 +820,23 @@ export default function Home() {
                           <td className="px-4 py-2.5 text-right font-mono font-semibold text-white">
                             ₹{ex.invoice_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </td>
-                          <td className="px-4 py-2.5 text-slate-300 font-mono text-[11px]">{ex.exception_type}</td>
+                          <td className="px-4 py-2.5 font-mono text-[11px]">
+                            <span className={`px-2 py-0.5 rounded-md font-semibold border ${
+                              ex.exception_type === 'AMOUNT_MISMATCH'
+                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                : ex.exception_type === 'DATE_MISMATCH'
+                                ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                                : ex.exception_type === 'MISSING_BANK'
+                                ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                                : ex.exception_type === 'MISSING_INVOICE'
+                                ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                                : ex.exception_type === 'DUPLICATE'
+                                ? 'bg-orange-500/10 text-orange-400 border-orange-500/20'
+                                : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                            }`}>
+                              {ex.exception_type}
+                            </span>
+                          </td>
                           <td className="px-4 py-2.5 text-center">
                             <span className="px-2 py-0.5 text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-full">
                               {ex.severity || 'HIGH'}
