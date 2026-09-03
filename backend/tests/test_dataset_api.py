@@ -61,13 +61,19 @@ class TestDatasetAPI(unittest.TestCase):
             f.write(SAMPLE_BANK_CSV)
         with open(target / f"bank_statement_{month}.csv", "w", encoding="utf-8") as f:
             f.write(SAMPLE_BANK_CSV)
+        with open(target / f"bank_statement_{month}_{year}.csv", "w", encoding="utf-8") as f:
+            f.write(SAMPLE_BANK_CSV)
         with open(target / "razorpay_settlements.csv", "w", encoding="utf-8") as f:
             f.write(SAMPLE_RAZORPAY_CSV)
         with open(target / f"razorpay_settlements_{month}.csv", "w", encoding="utf-8") as f:
             f.write(SAMPLE_RAZORPAY_CSV)
+        with open(target / f"razorpay_settlements_{month}_{year}.csv", "w", encoding="utf-8") as f:
+            f.write(SAMPLE_RAZORPAY_CSV)
         with open(target / "invoices.pdf", "wb") as f:
             f.write(SAMPLE_PDF_BYTES)
         with open(target / f"invoices_{month}.pdf", "wb") as f:
+            f.write(SAMPLE_PDF_BYTES)
+        with open(target / f"invoices_{month}_{year}.pdf", "wb") as f:
             f.write(SAMPLE_PDF_BYTES)
 
     def test_delete_unauthorized_missing_or_invalid_passcode(self):

@@ -258,14 +258,19 @@ async def upload_finance_dataset(
     target_dir.mkdir(parents=True, exist_ok=True)
     file_bytes = await file.read()
 
-    # Save month-specific canonical filename
-    m_name = Path(month_clean).name
-    if dataset_type == "bank":
-        dest_path = target_dir / f"bank_statement_{m_name}.csv"
-    elif dataset_type == "razorpay":
-        dest_path = target_dir / f"razorpay_settlements_{m_name}.csv"
-    elif dataset_type == "invoice":
-        dest_path = target_dir / f"invoices_{m_name}.pdf"
+    parts = month_clean.split("/")
+    if len(parts) >= 2:
+        y_name, m_name = parts[0], parts[1]
+    else:
+        y_name, m_name = "2026", parts[0]
+
+    # Save month-and-year-specific canonical filename
+    if dataset_type in ("bank", "bank_statement"):
+        dest_path = target_dir / f"bank_statement_{m_name}_{y_name}.csv"
+    elif dataset_type in ("razorpay", "razorpay_settlements"):
+        dest_path = target_dir / f"razorpay_settlements_{m_name}_{y_name}.csv"
+    elif dataset_type in ("invoice", "invoices"):
+        dest_path = target_dir / f"invoices_{m_name}_{y_name}.pdf"
     else:
         dest_path = target_dir / file.filename
 

@@ -162,21 +162,31 @@ def delete_finance_dataset(
             matched_files: list[Path] = []
             if scope in ("bank", "bank_statement", "bank_statement.csv"):
                 matched_files = (
-                    list(d.glob(f"*{month_clean}*bank*.csv"))
+                    list(d.glob(f"*{month_clean}*{year_clean}*bank*.csv"))
+                    + list(d.glob(f"*bank*{month_clean}*{year_clean}*.csv"))
+                    + list(d.glob(f"bank_statement_{month_clean}_{year_clean}.csv"))
+                    + list(d.glob(f"bank_statements_{month_clean}_{year_clean}.csv"))
+                    + list(d.glob(f"*{month_clean}*bank*.csv"))
                     + list(d.glob(f"*bank*{month_clean}*.csv"))
                     + list(d.glob(f"bank_statement_{month_clean}.csv"))
                     + list(d.glob("*bank*.csv"))
                 )
             elif scope in ("razorpay", "razorpay_settlements", "razorpay_settlements.csv"):
                 matched_files = (
-                    list(d.glob(f"*{month_clean}*razorpay*.csv"))
+                    list(d.glob(f"*{month_clean}*{year_clean}*razorpay*.csv"))
+                    + list(d.glob(f"*razorpay*{month_clean}*{year_clean}*.csv"))
+                    + list(d.glob(f"razorpay_settlements_{month_clean}_{year_clean}.csv"))
+                    + list(d.glob(f"*{month_clean}*razorpay*.csv"))
                     + list(d.glob(f"*razorpay*{month_clean}*.csv"))
                     + list(d.glob(f"razorpay_settlements_{month_clean}.csv"))
                     + list(d.glob("*razorpay*.csv"))
                 )
             elif scope in ("invoice", "invoices", "pdf", "invoices.pdf"):
                 matched_files = (
-                    list(d.glob(f"*{month_clean}*invoice*.pdf"))
+                    list(d.glob(f"*{month_clean}*{year_clean}*invoice*.pdf"))
+                    + list(d.glob(f"*invoice*{month_clean}*{year_clean}*.pdf"))
+                    + list(d.glob(f"invoices_{month_clean}_{year_clean}.pdf"))
+                    + list(d.glob(f"*{month_clean}*invoice*.pdf"))
                     + list(d.glob(f"*invoice*{month_clean}*.pdf"))
                     + list(d.glob(f"invoices_{month_clean}.pdf"))
                     + list(d.glob("*.pdf"))
@@ -293,21 +303,26 @@ def resolve_finance_dataset_paths(
 
     if period_dir.exists() and period_dir.is_dir():
         rp_candidates = (
-            list(period_dir.glob("razorpay_settlements.csv"))
+            list(period_dir.glob(f"razorpay_settlements_{month}_{year}.csv"))
             + list(period_dir.glob(f"razorpay_settlements_{month}.csv"))
+            + list(period_dir.glob("razorpay_settlements.csv"))
             + list(period_dir.glob("*razorpay*.csv"))
         )
         bk_candidates = (
-            list(period_dir.glob("bank_statement.csv"))
+            list(period_dir.glob(f"bank_statement_{month}_{year}.csv"))
+            + list(period_dir.glob(f"bank_statements_{month}_{year}.csv"))
             + list(period_dir.glob(f"bank_statement_{month}.csv"))
+            + list(period_dir.glob(f"bank_statements_{month}.csv"))
+            + list(period_dir.glob("bank_statement.csv"))
+            + list(period_dir.glob("bank_statements.csv"))
             + list(period_dir.glob("*bank*.csv"))
         )
-        rp_file = rp_candidates[0] if rp_candidates else period_dir / "razorpay_settlements.csv"
-        bk_file = bk_candidates[0] if bk_candidates else period_dir / "bank_statement.csv"
+        rp_file = rp_candidates[0] if rp_candidates else period_dir / f"razorpay_settlements_{month}_{year}.csv"
+        bk_file = bk_candidates[0] if bk_candidates else period_dir / f"bank_statement_{month}_{year}.csv"
         return rp_file, bk_file
 
     # If the period directory does not exist, return expected canonical paths inside that period (do not fall back to root)
-    return period_dir / "razorpay_settlements.csv", period_dir / "bank_statement.csv"
+    return period_dir / f"razorpay_settlements_{month}_{year}.csv", period_dir / f"bank_statement_{month}_{year}.csv"
 
 
 def reconcile_settlements(

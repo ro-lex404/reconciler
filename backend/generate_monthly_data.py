@@ -105,12 +105,12 @@ for r in rp_records[:50]:
 # Save August CSVs
 df_rp = pd.DataFrame(rp_records)
 df_bk = pd.DataFrame(bk_records)
-df_rp.to_csv(august_dir / "razorpay_settlements.csv", index=False)
-df_bk.to_csv(august_dir / "bank_statement.csv", index=False)
+df_rp.to_csv(august_dir / "razorpay_settlements_august_2026.csv", index=False)
+df_bk.to_csv(august_dir / "bank_statement_august_2026.csv", index=False)
 print("Saved August CSVs (RP:", len(df_rp), "Bank:", len(df_bk), ")")
 
 # Build August invoices.pdf via ReportLab
-pdf_path = str(august_dir / "invoices.pdf")
+pdf_path = str(august_dir / "invoices_august_2026.pdf")
 doc = SimpleDocTemplate(pdf_path, pagesize=letter, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
 styles = getSampleStyleSheet()
 

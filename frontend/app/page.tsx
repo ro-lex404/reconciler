@@ -103,8 +103,8 @@ export default function Home() {
 
   // --- Hierarchical Period / Calendar State ---
   const [availableDatasets, setAvailableDatasets] = useState<DatasetInfo[]>([
-    { year: '2026', month: 'july', label: 'July 2026', has_razorpay: true, has_bank: true, has_invoices: true },
-    { year: '2026', month: 'august', label: 'August 2026', has_razorpay: true, has_bank: true, has_invoices: true },
+    { year: '2026', month: 'july', label: 'July 2026', has_razorpay: true, has_bank: true, has_invoices: true, razorpay_file: 'razorpay_settlements_july_2026.csv', bank_file: 'bank_statement_july_2026.csv', invoice_file: 'invoices_july_2026.pdf' },
+    { year: '2026', month: 'august', label: 'August 2026', has_razorpay: true, has_bank: true, has_invoices: true, razorpay_file: 'razorpay_settlements_august_2026.csv', bank_file: 'bank_statement_august_2026.csv', invoice_file: 'invoices_august_2026.pdf' },
   ]);
   const [availableYears, setAvailableYears] = useState<string[]>(['2026', '2025', '2024']);
   const [selectedYear, setSelectedYear] = useState<string>('2026');
@@ -140,8 +140,6 @@ export default function Home() {
     return [];
   });
   const [input, setInput] = useState('');
-  const [kbFile, setKbFile] = useState<File | null>(null);
-  const [uploadStatus, setUploadStatus] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
 
   useEffect(() => {
@@ -211,29 +209,6 @@ export default function Home() {
       });
     } catch (err) {
       console.error('Failed to set active period:', err);
-    }
-  };
-
-  // --- File Upload for Vector RAG Knowledge Base ---
-  const handleUpload = async () => {
-    if (!kbFile) return;
-    setUploadStatus('Uploading to Vector Store...');
-    const formData = new FormData();
-    formData.append('file', kbFile);
-
-    try {
-      const res = await fetch(`${getApiBaseUrl()}/upload`, {
-        method: 'POST',
-        body: formData,
-      });
-      if (res.ok) {
-        setUploadStatus('Document indexed in PGVector & ready for Q&A!');
-        setKbFile(null);
-      } else {
-        setUploadStatus(`Upload failed (${res.status}).`);
-      }
-    } catch {
-      setUploadStatus('Error connecting to backend.');
     }
   };
 
@@ -650,21 +625,21 @@ export default function Home() {
                         <>
                           {hasBank ? (
                             <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md font-mono flex items-center gap-1">
-                              ✓ {curDataset?.bank_file || 'bank_statement.csv'}
+                              ✓ {curDataset?.bank_file || `bank_statement_${activeMonth}_${selectedYear}.csv`}
                             </span>
                           ) : (
                             <span className="px-2.5 py-1 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-md font-mono flex items-center gap-1">
-                              ✗ bank_statement.csv (missing)
+                              ✗ bank_statement_{activeMonth}_{selectedYear}.csv (missing)
                             </span>
                           )}
 
                           {hasRp ? (
                             <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md font-mono flex items-center gap-1">
-                              ✓ {curDataset?.razorpay_file || 'razorpay_settlements.csv'}
+                              ✓ {curDataset?.razorpay_file || `razorpay_settlements_${activeMonth}_${selectedYear}.csv`}
                             </span>
                           ) : (
                             <span className="px-2.5 py-1 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-md font-mono flex items-center gap-1">
-                              ✗ razorpay_settlements.csv (missing)
+                              ✗ razorpay_settlements_{activeMonth}_{selectedYear}.csv (missing)
                             </span>
                           )}
                         </>
@@ -870,23 +845,27 @@ export default function Home() {
                   </p>
                 </div>
 
-                {/* Vector KB Upload Box */}
-                <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 space-y-2">
-                  <p className="text-xs font-semibold text-slate-300">Add Document to Vector KB</p>
-                  <input
-                    type="file"
-                    accept=".pdf,.txt"
-                    onChange={(e) => setKbFile(e.target.files?.[0] || null)}
-                    className="text-[11px] text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[11px] file:font-semibold file:bg-slate-800 file:text-slate-300 hover:file:bg-slate-700 cursor-pointer w-full"
-                  />
-                  <button
-                    onClick={handleUpload}
-                    disabled={!kbFile}
-                    className="w-full py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-xs font-semibold text-white rounded-lg border border-slate-700 transition-colors"
-                  >
-                    Index in Vector Store
-                  </button>
-                  {uploadStatus && <p className="text-[11px] text-blue-400">{uploadStatus}</p>}
+                {/* Accounting Period & Dataset Status Card */}
+                <div className="p-3.5 bg-slate-950/80 rounded-xl border border-slate-800 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-300">Active Audit Period</span>
+                    <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-md font-mono capitalize">
+                      {selectedYear} / {activeMonth}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    AI synthesizes live DuckDB tables, exact transaction references, and forward cash settlement projections.
+                  </p>
+                  <div className="pt-2 border-t border-slate-800/80 space-y-1 text-[10px] text-slate-400 font-mono">
+                    <div className="flex items-center justify-between">
+                      <span>• Gateway:</span>
+                      <span className="text-slate-300 truncate max-w-[140px]">razorpay_{activeMonth}_{selectedYear}.csv</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>• Bank:</span>
+                      <span className="text-slate-300 truncate max-w-[140px]">bank_{activeMonth}_{selectedYear}.csv</span>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Suggested Controller Prompts */}
