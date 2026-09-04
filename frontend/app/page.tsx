@@ -474,12 +474,42 @@ export default function Home() {
     }
   };
 
-  // --- Copy Gateway Support Tracer Helper ---
+  // --- Copy Gateway Support Tracer Helper (Works on both HTTPS and plain HTTP IP) ---
   const handleCopyTracer = (ref: string, amount: number, excType: string) => {
-    const text = `RAZORPAY SETTLEMENT INQUIRY TICKET\n----------------------------------------\nReference ID: ${ref}\nAccounting Period: ${selectedYear}/${activeMonth}\nGross Invoice Amount: ₹${amount?.toFixed(2)}\nAnomaly Class: ${excType}\nRequested Action: Please provide settlement trace log & fee breakdown for payout reconciliation.`;
-    navigator.clipboard.writeText(text);
-    setCopiedNotification(true);
-    setTimeout(() => setCopiedNotification(false), 2500);
+    const safeAmount = amount != null && !isNaN(amount) ? `₹${Number(amount).toFixed(2)}` : '₹0.00';
+    const text = `RAZORPAY SETTLEMENT INQUIRY TICKET\n----------------------------------------\nReference ID: ${ref || 'N/A'}\nAccounting Period: ${selectedYear}/${activeMonth}\nGross Invoice Amount: ${safeAmount}\nAnomaly Class: ${excType || 'UNSPECIFIED'}\nRequested Action: Please provide settlement trace log & fee breakdown for payout reconciliation.`;
+    
+    if (typeof window !== 'undefined' && navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard
+        .writeText(text)
+        .then(() => {
+          setCopiedNotification(true);
+          setTimeout(() => setCopiedNotification(false), 2500);
+        })
+        .catch(() => fallbackCopy(text));
+    } else {
+      fallbackCopy(text);
+    }
+  };
+
+  const fallbackCopy = (text: string) => {
+    try {
+      const el = document.createElement('textarea');
+      el.value = text;
+      el.setAttribute('readonly', '');
+      el.style.position = 'fixed';
+      el.style.left = '-9999px';
+      el.style.top = '-9999px';
+      document.body.appendChild(el);
+      el.focus();
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      setCopiedNotification(true);
+      setTimeout(() => setCopiedNotification(false), 2500);
+    } catch (err) {
+      console.error('Fallback copy failed:', err);
+    }
   };
 
   return (
@@ -1863,290 +1893,386 @@ export default function Home() {
       {/* ============================================================ */}
       {/* MODAL: 3-WAY TRIANGULATION INSPECTOR & AUDIT BREAKDOWN */}
       {/* ============================================================ */}
-      {inspectRecord && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-3xl w-full p-6 sm:p-7 shadow-2xl space-y-5 my-8">
-            {/* Modal Header */}
-            <div className="flex items-start justify-between border-b border-slate-800 pb-4">
-              <div>
-                <div className="flex items-center gap-2.5">
-                  <span className="font-mono text-sm font-black text-white px-2.5 py-0.5 bg-blue-500/10 border border-blue-500/20 rounded-md">
-                    {inspectRecord.invoice_ref || inspectRecord.ref}
-                  </span>
-                  <span
-                    className={`px-2.5 py-0.5 text-xs font-bold rounded-full border ${
-                      inspectType === 'exception'
-                        ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+      {/* ============================================================ */}
+      {/* MODAL: 3-WAY TRIANGULATION INSPECTOR & AUDIT BREAKDOWN */}
+      {/* ============================================================ */}
+      {inspectRecord && (() => {
+        const isException = inspectType === 'exception' || Boolean(inspectRecord.exception_type || inspectRecord.type);
+        const excType = String(inspectRecord.exception_type || inspectRecord.type || '').toUpperCase();
+        const isMissingBank = excType === 'MISSING_BANK';
+        const isMissingInvoice = excType === 'MISSING_INVOICE' || excType === 'GHOST_CREDIT';
+        const isAmountMismatch = excType === 'AMOUNT_MISMATCH';
+        const isDateMismatch = excType === 'DATE_MISMATCH';
+
+        // 1. Gross Invoice Amount
+        const invoiceGross = isMissingInvoice 
+          ? 0 
+          : Number(inspectRecord.invoice_amount ?? inspectRecord.razorpay_amount ?? inspectRecord.amount ?? 0);
+
+        // 2. Bank Realized Amount
+        let bankRealized = 0;
+        if (isMissingBank) {
+          bankRealized = 0;
+        } else if (inspectRecord.bank_amount != null) {
+          bankRealized = Number(inspectRecord.bank_amount);
+        } else if (isException) {
+          if (isAmountMismatch) {
+            const match = String(inspectRecord.recommended_action || '').match(/Bank credited ₹([\d,]+(\.\d+)?)/);
+            if (match) {
+              bankRealized = parseFloat(match[1].replace(/,/g, ''));
+            } else {
+              bankRealized = invoiceGross > 0 ? invoiceGross - (invoiceGross * 0.0236) : 0;
+            }
+          } else if (isDateMismatch) {
+            bankRealized = invoiceGross;
+          } else if (isMissingInvoice) {
+            bankRealized = Number(inspectRecord.amount || 0);
+          } else {
+            bankRealized = 0;
+          }
+        } else {
+          bankRealized = Number(inspectRecord.bank_amount ?? invoiceGross);
+        }
+
+        // 3. Dates
+        const invoiceDocDate = isMissingInvoice
+          ? 'Unrecorded (None)'
+          : (inspectRecord.invoice_date || inspectRecord.razorpay_date || inspectRecord.date || '2026-08-19');
+
+        const bankValueDate = isMissingBank
+          ? 'Not Found (Unrealized)'
+          : (inspectRecord.bank_date || (isDateMismatch ? 'Delayed (+3 days)' : invoiceDocDate));
+
+        // 4. Statuses
+        let bankStatusText = 'Cleared';
+        let bankStatusClass = 'text-emerald-400 font-semibold';
+        if (isMissingBank) {
+          bankStatusText = '🔴 Missing / Unrealized';
+          bankStatusClass = 'text-rose-400 font-bold';
+        } else if (isMissingInvoice) {
+          bankStatusText = '🟡 Unrecorded Credit';
+          bankStatusClass = 'text-purple-400 font-bold';
+        } else if (isAmountMismatch) {
+          bankStatusText = '🟡 Amount Discrepancy';
+          bankStatusClass = 'text-amber-400 font-bold';
+        } else if (isDateMismatch) {
+          bankStatusText = '🟡 Delayed Clearing (>T+2)';
+          bankStatusClass = 'text-indigo-400 font-bold';
+        }
+
+        // 5. Gateway estimates
+        const feeEst = invoiceGross * 0.02;
+        const gstEst = feeEst * 0.18;
+        const netEst = invoiceGross > 0 ? invoiceGross - (feeEst + gstEst) : 0;
+
+        // 6. Mathematical delta
+        const delta = isMissingBank
+          ? -invoiceGross
+          : isMissingInvoice
+          ? bankRealized
+          : isDateMismatch
+          ? 0
+          : (bankRealized - invoiceGross);
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-3xl w-full p-6 sm:p-7 shadow-2xl space-y-5 my-8">
+              {/* Modal Header */}
+              <div className="flex items-start justify-between border-b border-slate-800 pb-4">
+                <div>
+                  <div className="flex items-center gap-2.5">
+                    <span className="font-mono text-sm font-black text-white px-2.5 py-0.5 bg-blue-500/10 border border-blue-500/20 rounded-md">
+                      {inspectRecord.invoice_ref || inspectRecord.merchant_ref || inspectRecord.ref || inspectRecord.payment_id || 'REF-N/A'}
+                    </span>
+                    <span
+                      className={`px-2.5 py-0.5 text-xs font-bold rounded-full border ${
+                        inspectType === 'exception' || isException
+                          ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                          : inspectType === 'match'
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                          : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                      }`}
+                    >
+                      {isException
+                        ? excType || 'EXCEPTION'
                         : inspectType === 'match'
-                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                        : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                    }`}
-                  >
-                    {inspectType === 'exception'
-                      ? inspectRecord.exception_type
-                      : inspectType === 'match'
-                      ? inspectRecord.match_type || 'RECONCILED'
-                      : 'RAW EXTRACTED'}
-                  </span>
-                  <span className="text-xs text-slate-400 font-mono">
-                    Period: {selectedYear}/{activeMonth}
-                  </span>
-                </div>
-                <h3 className="text-base font-bold text-white mt-1.5">
-                  3-Way Cross-Ledger Triangulation Inspector
-                </h3>
-              </div>
-              <button
-                onClick={() => setInspectRecord(null)}
-                className="text-slate-400 hover:text-white text-xl font-bold p-1 rounded-lg hover:bg-slate-800"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* 3-Column Triangulation Matrix */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-              {/* Column 1: Source Document Invoice */}
-              <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-2.5 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
-                    <span className="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-blue-400" />
-                      1. Source Invoice
+                        ? inspectRecord.match_type || 'RECONCILED'
+                        : 'RAW EXTRACTED'}
                     </span>
-                    <span className="text-[10px] text-slate-400 font-mono">PDF/OCR</span>
-                  </div>
-
-                  <div className="space-y-1.5 pt-2 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Reference:</span>
-                      <span className="font-mono font-bold text-slate-200">
-                        {inspectRecord.invoice_ref || inspectRecord.ref}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Document Date:</span>
-                      <span className="font-mono text-slate-300">
-                        {inspectRecord.invoice_date || inspectRecord.date}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Billed Status:</span>
-                      <span className="text-emerald-400 font-semibold">PAID</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-slate-800 flex justify-between items-baseline">
-                  <span className="text-[11px] text-slate-400">Gross Invoice:</span>
-                  <span className="font-mono font-bold text-sm text-white">
-                    ₹{(inspectRecord.invoice_amount || inspectRecord.amount || 0).toLocaleString('en-IN', {
-                      minimumFractionDigits: 2,
-                    })}
-                  </span>
-                </div>
-              </div>
-
-              {/* Column 2: Gateway Settlement Line */}
-              <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-2.5 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
-                    <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-indigo-400" />
-                      2. Gateway Report
+                    <span className="text-xs text-slate-400 font-mono">
+                      Period: {selectedYear}/{activeMonth}
                     </span>
-                    <span className="text-[10px] text-slate-400 font-mono">Razorpay</span>
                   </div>
-
-                  {(() => {
-                    const gross = inspectRecord.invoice_amount || inspectRecord.amount || 0;
-                    const feeEst = gross * 0.02;
-                    const gstEst = feeEst * 0.18;
-                    const netEst = gross - (feeEst + gstEst);
-
-                    return (
-                      <div className="space-y-1.5 pt-2 text-xs">
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Payout Batch:</span>
-                          <span className="font-mono text-slate-300 truncate max-w-[100px]">
-                            batch_{activeMonth}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">MDR Fee (2%):</span>
-                          <span className="font-mono text-rose-400">-₹{feeEst.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">GST on Fee (18%):</span>
-                          <span className="font-mono text-rose-400">-₹{gstEst.toFixed(2)}</span>
-                        </div>
-                      </div>
-                    );
-                  })()}
+                  <h3 className="text-base font-bold text-white mt-1.5">
+                    3-Way Cross-Ledger Triangulation Inspector
+                  </h3>
                 </div>
-
-                {(() => {
-                  const gross = inspectRecord.invoice_amount || inspectRecord.amount || 0;
-                  const netEst = gross - gross * 0.0236;
-                  return (
-                    <div className="pt-2 border-t border-slate-800 flex justify-between items-baseline">
-                      <span className="text-[11px] text-slate-400">Net Expected:</span>
-                      <span className="font-mono font-bold text-sm text-indigo-300">
-                        ₹{netEst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  );
-                })()}
-              </div>
-
-              {/* Column 3: Bank Statement Credit Entry */}
-              <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-2.5 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
-                    <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                      3. Bank Ledger
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-mono">Statement</span>
-                  </div>
-
-                  <div className="space-y-1.5 pt-2 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Value Date:</span>
-                      <span className="font-mono text-slate-300">
-                        {inspectRecord.bank_date || inspectRecord.invoice_date || inspectRecord.date}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Narration / UTR:</span>
-                      <span className="font-mono text-slate-300 truncate max-w-[100px]">
-                        CMS/RPAY/{inspectRecord.invoice_ref || inspectRecord.ref}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Clearing Status:</span>
-                      <span className="text-emerald-400 font-semibold">Cleared</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-slate-800 flex justify-between items-baseline">
-                  <span className="text-[11px] text-slate-400">Bank Deposited:</span>
-                  <span className="font-mono font-bold text-sm text-emerald-400">
-                    ₹{((inspectRecord.bank_amount ?? (inspectRecord.invoice_amount || inspectRecord.amount)) || 0).toLocaleString(
-                      'en-IN',
-                      { minimumFractionDigits: 2 }
-                    )}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Variance & Mathematical Delta Breakdown */}
-            <div className="p-4 bg-slate-950/90 rounded-2xl border border-slate-800 space-y-2.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-slate-300 uppercase tracking-wider">
-                  Audit Variance Decomposition
-                </span>
-                {inspectRecord.exception_type && (
-                  <span className="font-mono font-bold text-rose-400">
-                    Anomaly Class: {inspectRecord.exception_type}
-                  </span>
-                )}
-              </div>
-
-              {(() => {
-                const gross = inspectRecord.invoice_amount || inspectRecord.amount || 0;
-                const bank = inspectRecord.bank_amount ?? gross;
-                const delta = gross - bank;
-
-                return (
-                  <div className="grid grid-cols-3 gap-2 text-center text-xs py-2 bg-slate-900/60 rounded-xl border border-slate-800/80 font-mono">
-                    <div>
-                      <span className="text-slate-400 text-[10px] block">Invoice Gross</span>
-                      <span className="font-bold text-white">₹{gross.toFixed(2)}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 text-[10px] block">Bank Realized</span>
-                      <span className="font-bold text-emerald-400">₹{bank.toFixed(2)}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 text-[10px] block">Ledger Variance (Δ)</span>
-                      <span className={`font-bold ${delta !== 0 ? 'text-rose-400' : 'text-slate-400'}`}>
-                        {delta > 0 ? `-₹${delta.toFixed(2)}` : delta < 0 ? `+₹${Math.abs(delta).toFixed(2)}` : '₹0.00'}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              <p className="text-xs text-slate-300 leading-relaxed">
-                <b className="text-white">Recommended Action:</b>{' '}
-                {inspectRecord.recommended_action ||
-                  'Transaction is fully reconciled with matching banking credit.'}
-              </p>
-            </div>
-
-            {/* Action Buttons & Resolution Controls */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800">
-              <div className="flex flex-wrap items-center gap-2">
-                {inspectType === 'exception' && (
-                  <>
-                    <button
-                      onClick={() => {
-                        const ref = inspectRecord.invoice_ref || inspectRecord.ref;
-                        setResolutionStatusMap((prev) => ({
-                          ...prev,
-                          [ref]: 'RESOLVED (Fee Accepted)',
-                        }));
-                        setInspectRecord(null);
-                      }}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-emerald-600/20"
-                    >
-                      ✓ Accept Fee Variance (GL 6100)
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        const ref = inspectRecord.invoice_ref || inspectRecord.ref;
-                        setResolutionStatusMap((prev) => ({
-                          ...prev,
-                          [ref]: 'INVESTIGATING (Treasury)',
-                        }));
-                        setInspectRecord(null);
-                      }}
-                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-amber-600/20"
-                    >
-                      ⚠ Assign to Treasury
-                    </button>
-                  </>
-                )}
-
                 <button
-                  onClick={() =>
-                    handleCopyTracer(
-                      inspectRecord.invoice_ref || inspectRecord.ref,
-                      inspectRecord.invoice_amount || inspectRecord.amount,
-                      inspectRecord.exception_type || 'INSPECTION'
-                    )
-                  }
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5"
+                  onClick={() => setInspectRecord(null)}
+                  className="text-slate-400 hover:text-white text-xl font-bold p-1 rounded-lg hover:bg-slate-800"
                 >
-                  <span>📋</span>
-                  {copiedNotification ? 'Copied Tracer Ticket!' : 'Copy Support Ticket'}
+                  ✕
                 </button>
               </div>
 
-              <button
-                onClick={() => setInspectRecord(null)}
-                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold"
-              >
-                Close
-              </button>
+              {/* 3-Column Triangulation Matrix */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                {/* Column 1: Source Document Invoice */}
+                <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-2.5 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                      <span className="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-blue-400" />
+                        1. Source Invoice
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono">PDF/OCR</span>
+                    </div>
+
+                    <div className="space-y-1.5 pt-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Reference:</span>
+                        <span className="font-mono font-bold text-slate-200">
+                          {inspectRecord.invoice_ref || inspectRecord.merchant_ref || inspectRecord.ref || 'N/A'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Document Date:</span>
+                        <span className="font-mono text-slate-300">
+                          {invoiceDocDate}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Billed Status:</span>
+                        {isMissingInvoice ? (
+                          <span className="text-rose-400 font-semibold">MISSING</span>
+                        ) : (
+                          <span className="text-emerald-400 font-semibold">PAID</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-800 flex justify-between items-baseline">
+                    <span className="text-[11px] text-slate-400">Gross Invoice:</span>
+                    <span className="font-mono font-bold text-sm text-white">
+                      ₹{invoiceGross.toLocaleString('en-IN', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Column 2: Gateway Settlement Line */}
+                <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-2.5 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                      <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-indigo-400" />
+                        2. Gateway Report
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono">Razorpay</span>
+                    </div>
+
+                    <div className="space-y-1.5 pt-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Payout Batch:</span>
+                        <span className="font-mono text-slate-300 truncate max-w-[100px]">
+                          {isMissingInvoice ? 'None' : `batch_${activeMonth}`}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">MDR Fee (2%):</span>
+                        <span className="font-mono text-rose-400">
+                          {isMissingInvoice ? '₹0.00' : `-₹${feeEst.toFixed(2)}`}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">GST on Fee (18%):</span>
+                        <span className="font-mono text-rose-400">
+                          {isMissingInvoice ? '₹0.00' : `-₹${gstEst.toFixed(2)}`}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-800 flex justify-between items-baseline">
+                    <span className="text-[11px] text-slate-400">Net Expected:</span>
+                    <span className="font-mono font-bold text-sm text-indigo-300">
+                      ₹{netEst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Column 3: Bank Statement Credit Entry */}
+                <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-2.5 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                      <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                        3. Bank Ledger
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono">Statement</span>
+                    </div>
+
+                    <div className="space-y-1.5 pt-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Value Date:</span>
+                        <span className="font-mono text-slate-300">
+                          {bankValueDate}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Narration / UTR:</span>
+                        <span className="font-mono text-slate-300 truncate max-w-[110px]" title={isMissingBank ? 'No Entry' : `CMS/RPAY/${inspectRecord.invoice_ref || inspectRecord.merchant_ref || inspectRecord.ref || 'REF'}`}>
+                          {isMissingBank ? 'No Entry Found' : `CMS/RPAY/${inspectRecord.invoice_ref || inspectRecord.merchant_ref || inspectRecord.ref || 'REF'}`}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Clearing Status:</span>
+                        <span className={bankStatusClass}>{bankStatusText}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-800 flex justify-between items-baseline">
+                    <span className="text-[11px] text-slate-400">Bank Deposited:</span>
+                    <span className={`font-mono font-bold text-sm ${isMissingBank ? 'text-rose-400' : isAmountMismatch ? 'text-amber-400' : 'text-emerald-400'}`}>
+                      ₹{bankRealized.toLocaleString('en-IN', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Variance & Mathematical Delta Breakdown */}
+              <div className="p-4 bg-slate-950/90 rounded-2xl border border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-300 uppercase tracking-wider">
+                    Audit Variance Decomposition
+                  </span>
+                  {isException && (
+                    <span className="font-mono font-bold text-rose-400">
+                      Anomaly Class: {excType || 'UNMATCHED'}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-center text-xs py-2 bg-slate-900/60 rounded-xl border border-slate-800/80 font-mono">
+                  <div>
+                    <span className="text-slate-400 text-[10px] block">Invoice Gross</span>
+                    <span className="font-bold text-white">₹{invoiceGross.toFixed(2)}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[10px] block">Bank Realized</span>
+                    <span className={`font-bold ${isMissingBank ? 'text-rose-400' : 'text-emerald-400'}`}>
+                      ₹{bankRealized.toFixed(2)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[10px] block">Ledger Variance (Δ)</span>
+                    <span
+                      className={`font-bold ${
+                        isMissingBank
+                          ? 'text-rose-400'
+                          : isMissingInvoice
+                          ? 'text-purple-400'
+                          : isAmountMismatch
+                          ? 'text-amber-400'
+                          : isDateMismatch
+                          ? 'text-indigo-400'
+                          : Math.abs(delta) < 0.01
+                          ? 'text-emerald-400'
+                          : 'text-rose-400'
+                      }`}
+                    >
+                      {isMissingBank
+                        ? `-₹${invoiceGross.toFixed(2)}`
+                        : isMissingInvoice
+                        ? `+₹${bankRealized.toFixed(2)}`
+                        : isDateMismatch
+                        ? '₹0.00 (Date Variance)'
+                        : delta < 0
+                        ? `-₹${Math.abs(delta).toFixed(2)}`
+                        : delta > 0
+                        ? `+₹${delta.toFixed(2)}`
+                        : '₹0.00'}
+                    </span>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  <b className="text-white">Recommended Action:</b>{' '}
+                  {inspectRecord.recommended_action ||
+                    (isMissingBank
+                      ? 'No matching credit found in bank statement; verify if payout was delayed (T+1) or dropped by gateway.'
+                      : 'Transaction is fully reconciled with matching banking credit.')}
+                </p>
+              </div>
+
+              {/* Action Buttons & Resolution Controls */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800">
+                <div className="flex flex-wrap items-center gap-2">
+                  {isException && (
+                    <>
+                      <button
+                        onClick={() => {
+                          const ref = inspectRecord.invoice_ref || inspectRecord.merchant_ref || inspectRecord.ref;
+                          setResolutionStatusMap((prev) => ({
+                            ...prev,
+                            [ref]: 'RESOLVED (Fee Accepted)',
+                          }));
+                          setInspectRecord(null);
+                        }}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-emerald-600/20"
+                      >
+                        ✓ Accept Fee Variance (GL 6100)
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          const ref = inspectRecord.invoice_ref || inspectRecord.merchant_ref || inspectRecord.ref;
+                          setResolutionStatusMap((prev) => ({
+                            ...prev,
+                            [ref]: 'INVESTIGATING (Treasury)',
+                          }));
+                          setInspectRecord(null);
+                        }}
+                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-amber-600/20"
+                      >
+                        ⚠ Assign to Treasury
+                      </button>
+                    </>
+                  )}
+
+                  <button
+                    onClick={() =>
+                      handleCopyTracer(
+                        inspectRecord.invoice_ref || inspectRecord.merchant_ref || inspectRecord.ref,
+                        invoiceGross || bankRealized,
+                        excType || 'INSPECTION'
+                      )
+                    }
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5"
+                  >
+                    <span>📋</span>
+                    {copiedNotification ? 'Copied Tracer Ticket!' : 'Copy Support Ticket'}
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setInspectRecord(null)}
+                  className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

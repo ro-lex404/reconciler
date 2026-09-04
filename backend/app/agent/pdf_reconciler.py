@@ -401,6 +401,8 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
             p.ref as invoice_ref,
             p.amount as invoice_amount,
             p.invoice_date as invoice_date,
+            CAST(NULL AS DOUBLE) as bank_amount,
+            CAST(NULL AS VARCHAR) as bank_date,
             'MISSING_BANK' as exception_type,
             'HIGH' as severity,
             'No matching credit found in bank statement; verify if payout was delayed (T+1) or dropped by gateway' as recommended_action
@@ -416,6 +418,8 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
             p.ref as invoice_ref,
             p.amount as invoice_amount,
             p.invoice_date as invoice_date,
+            b.credit_amount as bank_amount,
+            strftime(b.clean_bank_date, '%Y-%m-%d') as bank_date,
             CASE
                 WHEN ABS(p.amount - b.credit_amount) > 5.0 THEN 'AMOUNT_MISMATCH'
                 WHEN ABS(DATEDIFF('day', TRY_CAST(p.invoice_date AS DATE), TRY_CAST(b.clean_bank_date AS DATE))) > 2 THEN 'DATE_MISMATCH'

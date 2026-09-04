@@ -492,6 +492,8 @@ def reconcile_settlements(
             r.merchant_ref,
             r.amount,
             strftime(r.clean_date, '%Y-%m-%d') as date,
+            CAST(NULL AS DOUBLE) as bank_amount,
+            CAST(NULL AS VARCHAR) as bank_date,
             'MISSING_BANK' as type,
             'HIGH' as severity,
             'Check bank portal for delayed NEFT settlement (T+1 window)' as recommended_action
@@ -508,6 +510,8 @@ def reconcile_settlements(
             r.merchant_ref,
             r.amount,
             strftime(r.clean_date, '%Y-%m-%d') as date,
+            b.credit_amount as bank_amount,
+            strftime(b.clean_date, '%Y-%m-%d') as bank_date,
             CASE
                 WHEN ABS(r.amount - b.credit_amount) > 1.0 THEN 'AMOUNT_MISMATCH'
                 WHEN ABS(DATEDIFF('day', r.clean_date, b.clean_date)) > 2 THEN 'DATE_MISMATCH'
@@ -529,8 +533,10 @@ def reconcile_settlements(
         SELECT
             NULL as payment_id,
             b.merchant_ref,
-            b.credit_amount as amount,
+            CAST(NULL AS DOUBLE) as amount,
             strftime(b.clean_date, '%Y-%m-%d') as date,
+            b.credit_amount as bank_amount,
+            strftime(b.clean_date, '%Y-%m-%d') as bank_date,
             'GHOST_CREDIT' as type,
             'HIGH' as severity,
             'Flag for compliance review — unreferenced credit with no Razorpay record' as recommended_action
@@ -544,8 +550,10 @@ def reconcile_settlements(
         SELECT
             NULL as payment_id,
             b.merchant_ref,
-            b.credit_amount as amount,
+            CAST(NULL AS DOUBLE) as amount,
             strftime(b.clean_date, '%Y-%m-%d') as date,
+            b.credit_amount as bank_amount,
+            strftime(b.clean_date, '%Y-%m-%d') as bank_date,
             'MISSING_INVOICE' as type,
             'HIGH' as severity,
             CONCAT('Bank credited reference ', b.merchant_ref, ' has no matching ledger transaction; verify unrecorded gateway payment') as recommended_action
