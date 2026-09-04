@@ -1,7 +1,8 @@
 # Razorpay AI Finance Controller & Reconciliation Engine
 
 > **Track 04: AI Finance Controller — Run the books and the cash position**  
-> *Razorpay Buildathon 2026*
+> *Razorpay Buildathon 2026*  
+> 🌐 **Live Cloud Deployment**: [http://44.203.41.225:3000/](http://44.203.41.225:3000/) *(Hosted on AWS EC2 Ubuntu Pro)*
 
 An autonomous, multi-source financial reconciliation engine and AI Finance Controller powered by **DuckDB**, **LangGraph**, **Groq LLMs**, **PGVector**, and **ReportLab**.
 
@@ -42,35 +43,125 @@ An autonomous, multi-source financial reconciliation engine and AI Finance Contr
 
 ---
 
-## Architecture
+## Architecture & System Design
 
+### 1. End-to-End System Topology
+
+```mermaid
+flowchart TB
+    subgraph ClientLayer["🖥️ Frontend & Client Layer (Next.js 16 / React 19 / Tailwind)"]
+        UI_Dash["📊 Reconciliation Dashboard<br/><i>KPIs, Multi-Tab Tables, Live Search & Filters</i>"]
+        UI_Inspector["🔍 3-Way Triangulation Inspector<br/><i>Invoice ↔ Gateway ↔ Bank Delta Decomposition</i>"]
+        UI_QA["💬 Financial Q/A Agent<br/><i>Natural Language Chat + Paperclip Citations 📎</i>"]
+        UI_Period["📅 Hierarchical Period Selector<br/><i>Multi-Year / Monthly Calendar Isolation</i>"]
+        UI_Guide["📖 Interactive User Guide<br/><i>4-Stage Lifecycle & 6 Anomaly Class Matrix</i>"]
+    end
+
+    subgraph APILayer["⚡ API Gateway & Controller Layer (FastAPI / Uvicorn)"]
+        API_Auth["🔐 Passcode Controller Auth"]
+        API_Endpoints["🌐 REST Endpoints<br/><i>/finance/extract-pdf<br/>/finance/chat<br/>/finance/export-excel<br/>/finance/export-report</i>"]
+        API_Async["⚡ Async Celery Task Dispatcher"]
+    end
+
+    subgraph MultiModal["📄 Multi-Modal Document Intelligence Pipeline"]
+        direction TB
+        Input_Doc["📥 Input Documents<br/><i>Digital Vector PDFs (.pdf) OR Scanned / Photo Receipts (.png, .jpg, .webp)</i>"]
+        PyPDF_Node["📑 PyPDF Vector Parser"]
+        OCR_Node["👁️ Tesseract Local OCR"]
+        Vision_Node["🧠 Groq Vision Multi-Modal LLM<br/><i>(llama-3.2-11b-vision-preview)</i>"]
+        Pydantic_Node["📐 Structured Pydantic Schema Validator<br/><i>(InvoiceRecord / ExtractedInvoiceList)</i>"]
+        
+        Input_Doc --> PyPDF_Node
+        PyPDF_Node -- "Low Text Density" --> OCR_Node
+        OCR_Node -- "Fallback / Phone Photos" --> Vision_Node
+        PyPDF_Node & OCR_Node & Vision_Node --> Pydantic_Node
+    end
+
+    subgraph AgenticOrchestration["🤖 LangGraph Autonomous Agentic Orchestrator"]
+        Router["🧭 Intent Classifier & Router<br/><i>(Llama 3.3 70B / 20B)</i>"]
+        TextToSQL["⚙️ Deterministic Text-to-SQL Generator"]
+        DenseRAG["📚 Dense Semantic RAG Retriever"]
+        CashForecaster["📈 7-Day Forward Cash Forecaster<br/><i>(Gross - 2.0% MDR - 18% GST)</i>"]
+        Synthesizer["✍️ Executive Audit Synthesizer<br/><i>Zero-Hallucination + Source Attribution 📎</i>"]
+        
+        Router -->|"Relational Inquiry"| TextToSQL
+        Router -->|"Policy / Anomaly Inquiry"| DenseRAG
+        Router -->|"Liquidity / Payout Inquiry"| CashForecaster
+        TextToSQL & DenseRAG & CashForecaster --> Synthesizer
+    end
+
+    subgraph RelationalEngine["⚡ Vectorized Relational Ledger Engine (DuckDB OLAP)"]
+        direction TB
+        Pass1["Pass 1: Exact Matching<br/><i>Ref ID & Amount (Δ < ₹0.01, 100% Confidence)</i>"]
+        Pass2["Pass 2: Fuzzy Clearing Shift<br/><i>Date ±3 Days Tolerance, Fee Delta ≤ ₹5.00 (65%-85%)</i>"]
+        Pass3["Pass 3: Many-to-One Settlement Bundling<br/><i>Combinatorial Multi-Invoice to Single Bank Deposit</i>"]
+        
+        AnomalyFilter["🚨 Deterministic 6-Class Anomaly Engine<br/><i>• AMOUNT_MISMATCH  • DATE_MISMATCH<br/>• MISSING_BANK     • MISSING_INVOICE<br/>• DUPLICATE        • GHOST_CREDIT</i>"]
+        
+        Invariant["⚖️ Mathematical Invariant Balance Guarantee<br/><b>Total Extracted ≡ Matched Records + Flagged Exceptions</b>"]
+        
+        Pass1 --> Pass2 --> Pass3 --> AnomalyFilter --> Invariant
+    end
+
+    subgraph StorageLayer["💾 Storage & Vector Embeddings Layer"]
+        H_Store["📁 Hierarchical Statement Store<br/><i>data/&lt;year&gt;/&lt;month&gt;/ (Bank CSVs, Gateway CSVs)</i>"]
+        PG_Vector["🐘 PostgreSQL 16 + PGVector<br/><i>384-dim Dense Embeddings + Chunk Metadata</i>"]
+        Redis_Queue["⚡ Redis Message Broker + Celery Worker"]
+    end
+
+    subgraph ComplianceExport["📑 Compliance & Export Engine"]
+        PDF_Gen["📄 ReportLab PDF Audit Generator<br/><i>Unicode ₹ Rendering, Timestamped Executive Report</i>"]
+        Excel_Gen["📊 OpenPyXL Multi-Tab Excel Generator<br/><i>Executive Summary, Matched Items, Exceptions (.xlsx)</i>"]
+    end
+
+    %% Wiring connections
+    ClientLayer <==>|"REST / JSON"| APILayer
+    APILayer --> MultiModal
+    MultiModal --> AgenticOrchestration
+    MultiModal --> RelationalEngine
+    APILayer <--> AgenticOrchestration
+    AgenticOrchestration <--> RelationalEngine
+    AgenticOrchestration <--> StorageLayer
+    RelationalEngine <--> H_Store
+    APILayer --> StorageLayer
+    StorageLayer <--> Redis_Queue
+    APILayer --> ComplianceExport
+    ComplianceExport -.->|"Downloadable Files"| ClientLayer
 ```
-                                 ┌───────────────────────────────┐
-                                 │    Next.js 16 UI (Port 3000)  │
-                                 │  Interactive Chat + Dashboard │
-                                 └───────────────┬───────────────┘
-                                                 │ HTTP / REST
-                                                 ▼
-                                 ┌───────────────────────────────┐
-                                 │    FastAPI Backend (Port 8000)│
-                                 │    Router + Endpoints         │
-                                 └──────┬─────────────────┬──────┘
-                                        │                 │
-              ┌─────────────────────────┘                 └─────────────────────────┐
-              ▼                                                                     ▼
-┌───────────────────────────────┐                                     ┌───────────────────────────────┐
-│     DuckDB In-Memory OLAP     │                                     │    LangGraph Agent Pipeline   │
-│  • Multi-Pass Relational SQL  │                                     │  • Intent Router (20B)        │
-│  • <10ms Query Execution      │                                     │  • Executive Synthesizer(120B)│
-│  • Zero-Copy CSV Scanning     │                                     │  • Text-to-SQL Generation     │
-└─────────────┬─────────────────┘                                     └───────────────┬───────────────┘
-              │                                                                       │
-              ▼                                                                       ▼
-┌───────────────────────────────┐                                     ┌───────────────────────────────┐
-│     Hierarchical Datasets     │                                     │      PostgreSQL + PGVector    │
-│  • data/2026/july/            │                                     │  • 384-dim Dense Embeddings   │
-│  • data/2026/august/          │                                     │  • Chunk Metadata & Sources   │
-└───────────────────────────────┘                                     └───────────────────────────────┘
+
+---
+
+### 2. 3-Way Cross-Ledger Triangulation & Settlement Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Customer as 👤 Customer
+    participant Invoice as 🧾 Source Invoice (PDF / Photo)
+    participant Gateway as 💳 Razorpay Payment Gateway
+    participant Bank as 🏦 Company Bank Ledger (CSV)
+    participant Reconciler as ⚡ Nexus Triangulation Engine
+    actor Controller as 🧑‍💼 Finance Controller
+
+    Customer->>Invoice: Purchase Goods (Gross Invoiced = ₹2,500.00 [REF1004])
+    Customer->>Gateway: Online Payment via Razorpay Checkout
+    Gateway->>Gateway: Deduct 2.0% MDR Fee (-₹50.00) & 18% GST (-₹9.00)
+    Gateway->>Bank: Net Lump-Sum Settlement Deposit (₹2,441.00)
+    
+    Note over Reconciler: Ingestion & 3-Way Triangulation Pass
+    Invoice->>Reconciler: Extracted Gross Bill: ₹2,500.00
+    Gateway->>Reconciler: Settlement Payout Record: Net ₹2,441.00 (Fee = ₹59.00)
+    Bank->>Reconciler: Actual Credit Entry: ₹2,441.00 (UTR: CMS/RPAY/REF1004)
+    
+    Reconciler->>Reconciler: Compute Variance Delta:<br/>Gross (₹2,500.00) - Deductions (₹59.00) - Bank (₹2,441.00) = Δ ₹0.00
+    
+    alt Exact Reconciliation / Fee Proven
+        Reconciler-->>Controller: Flag as AMOUNT_MISMATCH (Explained by Gateway MDR)
+        Controller->>Reconciler: Click [✓ Accept Fee Variance] → Auto-book to GL 6100
+    else Missing Deposit in Bank
+        Reconciler-->>Controller: Flag as MISSING_BANK (High Severity)
+        Controller->>Reconciler: Click [📋 Copy Support Ticket] → Dispatch Razorpay Tracer
+    end
 ```
 
 ---
