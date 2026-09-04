@@ -18,6 +18,7 @@ sqlalchemy==2.*
 # --- In-Memory Data Analytics ---
 duckdb==1.5.*
 pandas==2.2.*
+openpyxl==3.1.*
 
 # --- AI & Agentic Orchestration ---
 langchain==0.3.*

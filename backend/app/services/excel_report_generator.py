@@ -4,9 +4,12 @@ import io
 from datetime import datetime
 from typing import Any, Dict, List
 
-import openpyxl
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from openpyxl.utils import get_column_letter
+try:
+    import openpyxl
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+except ImportError:
+    openpyxl = None
 
 
 def generate_reconciliation_excel_report(
@@ -18,6 +21,16 @@ def generate_reconciliation_excel_report(
     matches: List[Dict[str, Any]] | None = None,
 ) -> bytes:
     """Generates a professional multi-tab Excel workbook (.xlsx) for finance controllers and auditors."""
+    if openpyxl is None:
+        buf = io.StringIO()
+        buf.write(f"# NEXUS RECONCILER AUDIT REPORT\n")
+        buf.write(f"# Source: {source_filename}\n")
+        buf.write(f"# Extracted: {extracted_count}, Matched: {matched_count}, Exceptions: {exception_count}\n\n")
+        buf.write("Invoice Ref,Amount,Date,Exception Type,Severity,Recommended Action\n")
+        for ex in exceptions:
+            buf.write(f"{ex.get('invoice_ref')},{ex.get('invoice_amount')},{ex.get('invoice_date')},{ex.get('exception_type')},{ex.get('severity')},{ex.get('recommended_action')}\n")
+        return buf.getvalue().encode("utf-8")
+
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
