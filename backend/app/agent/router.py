@@ -264,7 +264,7 @@ CRITICAL INSTRUCTIONS:
             print(f"Synthesizer LLM warning: {e}")
 
     # Clean executive fallback response if GROQ_API_KEY is not configured or fails
-    fallback_text = f"### 📊 Reconciliation Summary\n\n{reconciliation_context}" if reconciliation_context else "No active reconciliation dataset found for this query period."
+    fallback_text = f"### Reconciliation Summary\n\n{reconciliation_context}" if reconciliation_context else "No active reconciliation dataset found for this query period."
     return {"final_answer": fallback_text, "sources": sources}
 
 

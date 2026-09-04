@@ -249,10 +249,10 @@ export default function Home() {
         }, 1500);
       } else {
         const err = await res.json().catch(() => ({ error: 'Upload rejected by server.' }));
-        setIngestStatus(`⚠️ ${err.error || 'Upload failed. Check Controller Passcode.'}`);
+        setIngestStatus(err.error || 'Upload failed. Check Controller Passcode.');
       }
     } catch {
-      setIngestStatus('⚠️ Network error connecting to backend API.');
+      setIngestStatus('Network error connecting to backend API.');
     } finally {
       setIsIngesting(false);
     }
@@ -289,10 +289,10 @@ export default function Home() {
         }, 1200);
       } else {
         const err = await res.json().catch(() => ({ error: 'Delete failed' }));
-        setDeleteStatus(`⚠️ ${err.error || 'Delete failed. Check Controller Passcode.'}`);
+        setDeleteStatus(err.error || 'Delete failed. Check Controller Passcode.');
       }
     } catch {
-      setDeleteStatus('⚠️ Network error connecting to backend API.');
+      setDeleteStatus('Network error connecting to backend API.');
     } finally {
       setIsDeleting(false);
     }
@@ -335,7 +335,7 @@ export default function Home() {
       console.error('Chat error:', err);
       setMessages((prev) => {
         const updated = [...prev];
-        updated[updated.length - 1].content = '⚠️ Connection error. Please check your backend service.';
+        updated[updated.length - 1].content = 'Connection error. Please check your backend service.';
         return updated;
       });
     } finally {
@@ -458,7 +458,7 @@ export default function Home() {
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/40'
             }`}
           >
-            📊 Reconciler Dashboard
+            Reconciler Dashboard
           </button>
           <button
             onClick={() => setActiveTab('chat')}
@@ -468,7 +468,7 @@ export default function Home() {
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/40'
             }`}
           >
-            💬 AI Controller Chat
+            AI Controller Chat
           </button>
         </div>
 
@@ -480,9 +480,9 @@ export default function Home() {
               onClick={() => setShowCalendarDropdown(!showCalendarDropdown)}
               className="flex items-center gap-2 bg-slate-800/90 hover:bg-slate-800 text-slate-200 border border-slate-700 hover:border-blue-500/50 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors shadow-sm"
             >
-              <span className="text-blue-400">📅</span>
+              <span className="text-slate-400 font-mono text-[11px]">Period:</span>
               <span>{selectedYear} · <span className="capitalize">{activeMonth}</span></span>
-              <span className="text-slate-400 text-[10px]">▼</span>
+              <span className="text-slate-400 text-[9px]">▼</span>
             </button>
 
             {/* Hierarchical Calendar Dropdown */}
@@ -501,7 +501,7 @@ export default function Home() {
                       className="px-1 text-slate-400 hover:text-white text-[10px]"
                       title="Older Year"
                     >
-                      ◀
+                      ‹
                     </button>
                     <div className="flex items-center gap-1 max-w-[120px] overflow-x-auto scrollbar-none py-0.5">
                       {availableYears.map((yr) => (
@@ -527,7 +527,7 @@ export default function Home() {
                       className="px-1 text-slate-400 hover:text-white text-[10px]"
                       title="Newer Year"
                     >
-                      ▶
+                      ›
                     </button>
                   </div>
                 </div>
@@ -573,7 +573,7 @@ export default function Home() {
             onClick={() => setShowUploadModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-blue-500 rounded-lg transition-all shadow-sm"
           >
-            📥 Ingest Statement
+            Ingest Statement
           </button>
 
           {/* Purge / Delete Dataset Button */}
@@ -582,7 +582,7 @@ export default function Home() {
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-900/60 rounded-lg transition-all shadow-sm"
             title="Purge statement batch for active period"
           >
-            🗑️ Purge Period
+            Purge Period
           </button>
         </div>
       </header>
@@ -601,7 +601,7 @@ export default function Home() {
               <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
                 <div>
                   <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                    📄 PDF Invoice Extractor & Settlement Reconciler
+                    PDF Invoice Extractor & Settlement Reconciler
                   </h2>
                   <p className="text-sm text-slate-400 mt-1 max-w-2xl">
                     Extract multi-page invoice records via Groq Llama 3.3 70B, match against active banking ledgers, and resolve Many-to-One lump-sum settlement batches in DuckDB.
@@ -611,7 +611,7 @@ export default function Home() {
                   <div className="flex flex-wrap items-center gap-2 mt-3 text-xs">
                     <span className="text-slate-400">Active Period:</span>
                     <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-md font-mono font-bold capitalize">
-                      📁 {selectedYear} / {activeMonth}
+                      {selectedYear} / {activeMonth}
                     </span>
                     
                     {(() => {
@@ -624,22 +624,26 @@ export default function Home() {
                       return (
                         <>
                           {hasBank ? (
-                            <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md font-mono flex items-center gap-1">
-                              ✓ {curDataset?.bank_file || `bank_statement_${activeMonth}_${selectedYear}.csv`}
+                            <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md font-mono flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                              {curDataset?.bank_file || `bank_statement_${activeMonth}_${selectedYear}.csv`}
                             </span>
                           ) : (
-                            <span className="px-2.5 py-1 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-md font-mono flex items-center gap-1">
-                              ✗ bank_statement_{activeMonth}_{selectedYear}.csv (missing)
+                            <span className="px-2.5 py-1 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-md font-mono flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                              bank_statement_{activeMonth}_{selectedYear}.csv (missing)
                             </span>
                           )}
 
                           {hasRp ? (
-                            <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md font-mono flex items-center gap-1">
-                              ✓ {curDataset?.razorpay_file || `razorpay_settlements_${activeMonth}_${selectedYear}.csv`}
+                            <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md font-mono flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                              {curDataset?.razorpay_file || `razorpay_settlements_${activeMonth}_${selectedYear}.csv`}
                             </span>
                           ) : (
-                            <span className="px-2.5 py-1 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-md font-mono flex items-center gap-1">
-                              ✗ razorpay_settlements_{activeMonth}_{selectedYear}.csv (missing)
+                            <span className="px-2.5 py-1 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-md font-mono flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                              razorpay_settlements_{activeMonth}_{selectedYear}.csv (missing)
                             </span>
                           )}
                         </>
@@ -667,7 +671,7 @@ export default function Home() {
                         Extracting & Matching...
                       </>
                     ) : (
-                      '⚡ Extract & Reconcile'
+                      'Extract & Reconcile'
                     )}
                   </button>
                 </div>
@@ -675,14 +679,14 @@ export default function Home() {
 
               {pdfStatus && (
                 <div className="mt-4 px-4 py-2.5 bg-blue-500/10 border border-blue-500/20 rounded-xl text-xs text-blue-300 flex items-center justify-between">
-                  <span>ℹ️ {pdfStatus}</span>
+                  <span>{pdfStatus}</span>
                   {pdfResult && (
                     <button
                       onClick={handleExportReport}
                       disabled={isExporting}
                       className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg text-xs shadow transition-all flex items-center gap-1.5"
                     >
-                      {isExporting ? 'Generating Report...' : '📥 Export PDF Audit Report'}
+                      {isExporting ? 'Generating Report...' : 'Export PDF Audit Report'}
                     </button>
                   )}
                 </div>
@@ -714,7 +718,7 @@ export default function Home() {
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wider text-blue-400">Reconciled Against</p>
                     <p className="text-xs font-mono font-bold text-blue-300 mt-2 break-words leading-relaxed" title={pdfResult.reconciliation.source_dataset}>
-                      📊 {pdfResult.reconciliation.source_dataset || `${selectedYear}/${activeMonth}`}
+                      {pdfResult.reconciliation.source_dataset || `${selectedYear}/${activeMonth}`}
                     </p>
                   </div>
                   <span className="inline-block mt-3 self-start px-2 py-0.5 text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-md">
@@ -729,7 +733,7 @@ export default function Home() {
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    📋 Extracted PDF Invoice Records ({pdfResult.records.length})
+                    Extracted PDF Invoice Records ({pdfResult.records.length})
                   </h3>
                   <span className="text-xs text-slate-400">Schema enforced via Pydantic</span>
                 </div>
@@ -772,7 +776,7 @@ export default function Home() {
               <div className="bg-slate-900 border border-rose-900/40 rounded-2xl p-6 shadow-xl space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-base font-bold text-rose-400 flex items-center gap-2">
-                    ⚠️ Reconciliation Exceptions & Action Items ({pdfResult.reconciliation.exceptions.length})
+                    Reconciliation Exceptions & Action Items ({pdfResult.reconciliation.exceptions.length})
                   </h3>
                   <span className="text-xs text-rose-400/80 font-medium">Categorized Anomaly Action Items</span>
                 </div>
@@ -838,7 +842,7 @@ export default function Home() {
               <div className="space-y-4">
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    🧠 Hybrid AI Agent
+                    Hybrid AI Agent
                   </h3>
                   <p className="text-xs text-slate-400 mt-1">
                     Powered by LangGraph router, DuckDB SQL Engine, and PGVector dense semantic search.
@@ -883,7 +887,7 @@ export default function Home() {
                       onClick={() => setInput(prompt)}
                       className="w-full text-left text-xs text-slate-300 bg-slate-950/50 hover:bg-blue-600/10 hover:text-blue-400 hover:border-blue-500/30 p-2.5 rounded-lg border border-slate-800 transition-all leading-snug"
                     >
-                      💡 {prompt}
+                      {prompt}
                     </button>
                   ))}
                 </div>
@@ -892,7 +896,7 @@ export default function Home() {
               {/* Status Info */}
               <div className="pt-3 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
                 <span>Active Period: <b className="text-blue-400 capitalize">{selectedYear} / {activeMonth}</b></span>
-                <span className="text-emerald-400">● Live DuckDB</span>
+                <span className="text-emerald-400 flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Live DuckDB</span>
               </div>
             </div>
 
@@ -902,8 +906,8 @@ export default function Home() {
               <div className="flex-1 p-6 overflow-y-auto space-y-4">
                 {messages.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-3">
-                    <div className="w-12 h-12 rounded-2xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-2xl text-blue-400 shadow-inner">
-                      💬
+                    <div className="w-12 h-12 rounded-2xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shadow-inner font-mono text-sm font-bold">
+                      AI
                     </div>
                     <h4 className="text-base font-bold text-white">Ask the AI Finance Controller</h4>
                     <p className="text-xs text-slate-400 max-w-md">
@@ -918,7 +922,7 @@ export default function Home() {
                     >
                       <div className="flex items-center gap-2 px-1">
                         <span className="text-[11px] font-semibold text-slate-400">
-                          {m.role === 'user' ? '👤 Finance Officer' : '🤖 AI Controller'}
+                          {m.role === 'user' ? 'Finance Officer' : 'AI Controller'}
                         </span>
                       </div>
 
@@ -954,7 +958,7 @@ export default function Home() {
                                 title={s.snippet || s.engine || s.name}
                                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-900 text-blue-300 border border-slate-700/60 shadow-sm cursor-help hover:border-blue-500/50 hover:bg-slate-800 transition-colors"
                               >
-                                {s.type === 'document' ? '📄' : '📊'}
+                                <span className="font-mono text-[9px] text-slate-400">{s.type === 'document' ? '[Doc]' : '[SQL]'}</span>
                                 <span>{s.name}</span>
                                 {s.page && <span className="text-slate-400 font-mono">p.{s.page}</span>}
                               </div>
@@ -997,7 +1001,7 @@ export default function Home() {
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
-                📥 Ingest New Statement Batch
+                Ingest New Statement Batch
               </h3>
               <button
                 onClick={() => setShowUploadModal(false)}
@@ -1115,7 +1119,7 @@ export default function Home() {
           <div className="bg-slate-900 border border-rose-900/60 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-rose-400 flex items-center gap-2">
-                🗑️ Purge Accounting Period Dataset
+                Purge Accounting Period Dataset
               </h3>
               <button
                 onClick={() => setShowDeleteModal(false)}

@@ -179,7 +179,7 @@ async def chat_endpoint(request: ChatRequest):
         return JSONResponse({"answer": normalized_answer, "sources": sources})
     except Exception as e:
         print(f"Chat execution fallback notice: {e}")
-        fallback_text = f"### 📊 Reconciliation Summary\n\n{reconciliation_context}" if reconciliation_context else "No active reconciliation dataset found for this query period."
+        fallback_text = f"### Reconciliation Summary\n\n{reconciliation_context}" if reconciliation_context else "No active reconciliation dataset found for this query period."
         return JSONResponse({"answer": fallback_text, "sources": []})
 
 

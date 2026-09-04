@@ -9,15 +9,15 @@
 ## Feature Inventory & Test Coverage
 | # | Feature | Source (Requirement) | Tier 1 (Coverage) | Tier 2 (Boundary) | Tier 3 (Pairwise) | Tier 4 (Scenario) |
 |---|---------|---------------------|:-----------------:|:-----------------:|:-----------------:|:-----------------:|
-| 1 | `DELETE /finance/dataset` | ORIGINAL_REQUEST R1 | 5 | 5 | ✓ | ✓ |
-| 2 | Ingestion & DuckDB Sync | ORIGINAL_REQUEST R1 | 5 | 5 | ✓ | ✓ |
-| 3 | Calendar Year Horizontal Scroll | ORIGINAL_REQUEST R2 | 5 | 5 | ✓ | ✓ |
-| 4 | Dataset Purge Modal UI | ORIGINAL_REQUEST R1 | 5 | 5 | ✓ | ✓ |
-| 5 | Calendar Badge & Table Refresh | ORIGINAL_REQUEST R1 | 5 | 5 | ✓ | ✓ |
-| 6 | 6-Class Exception Engine | ORIGINAL_REQUEST R3 | 5 | 5 | ✓ | ✓ |
-| 7 | DuckDB SQL & Date Normalization | ORIGINAL_REQUEST R3 | 5 | 5 | ✓ | ✓ |
-| 8 | Mathematical Invariant | ORIGINAL_REQUEST R4 | 5 | 5 | ✓ | ✓ |
-| 9 | AI Chatbot Citations & Period | ORIGINAL_REQUEST R4 | 5 | 5 | ✓ | ✓ |
+| 1 | `DELETE /finance/dataset` | ORIGINAL_REQUEST R1 | 5 | 5 | Yes | Yes |
+| 2 | Ingestion & DuckDB Sync | ORIGINAL_REQUEST R1 | 5 | 5 | Yes | Yes |
+| 3 | Calendar Year Horizontal Scroll | ORIGINAL_REQUEST R2 | 5 | 5 | Yes | Yes |
+| 4 | Dataset Purge Modal UI | ORIGINAL_REQUEST R1 | 5 | 5 | Yes | Yes |
+| 5 | Calendar Badge & Table Refresh | ORIGINAL_REQUEST R1 | 5 | 5 | Yes | Yes |
+| 6 | 6-Class Exception Engine | ORIGINAL_REQUEST R3 | 5 | 5 | Yes | Yes |
+| 7 | DuckDB SQL & Date Normalization | ORIGINAL_REQUEST R3 | 5 | 5 | Yes | Yes |
+| 8 | Mathematical Invariant | ORIGINAL_REQUEST R4 | 5 | 5 | Yes | Yes |
+| 9 | AI Chatbot Citations & Period | ORIGINAL_REQUEST R4 | 5 | 5 | Yes | Yes |
 
 ## Test Architecture
 - **Backend Test Runner**: `venv/Scripts/python.exe -m unittest discover -s backend/tests -p "test_*.py" -v`

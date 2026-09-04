@@ -1,4 +1,4 @@
-# Razorpay AI Finance Controller & Reconciliation Engine 🚀
+# Razorpay AI Finance Controller & Reconciliation Engine
 
 > **Track 04: AI Finance Controller — Run the books and the cash position**  
 > *Razorpay Buildathon 2026*
@@ -7,21 +7,24 @@ An autonomous, multi-source financial reconciliation engine and AI Finance Contr
 
 ---
 
-## 🌟 Key Features
+## Key Features
 
 ### 1. Vectorized Multi-Pass DuckDB Reconciliation Engine
 * **Pass 1 — Exact Matching**: Instant matching on transaction reference ID and exact monetary amount ($\Delta < ₹0.01$).
 * **Pass 2 — Fuzzy Matching**: Tolerant matching for gateway fee rounding ($\Delta \le ₹5.00$) and T+1/T+2 bank clearance date shifts with dynamic confidence scoring (65%–85%).
-* **Pass 3 — Actionable Exception Categorization**:
-  * `missing_bank_entry`: Gateway transaction with missing bank credit (T+1 delay check).
-  * `amount_mismatch` & `date_mismatch`: Variance flagged for fee deduction/GST review.
-  * `ghost_credit`: Bank credit with no corresponding gateway reference (flagged for compliance review).
+* **Pass 3 — Actionable Exception Categorization (6 Standard Classes)**:
+  * `AMOUNT_MISMATCH`: Variance flagged for gateway processing fee deduction or GST discrepancy.
+  * `DATE_MISMATCH`: Settlement date clearing variance beyond T+2 bank clearance tolerance.
+  * `MISSING_BANK`: Gateway settlement record with no corresponding bank ledger credit.
+  * `MISSING_INVOICE`: Bank credit entry referencing valid merchant tag without ledger record.
+  * `DUPLICATE`: Multiple ledger entries referencing identical merchant identifiers.
+  * `GHOST_CREDIT`: Unreferenced bank credit with no corresponding gateway entry.
 * **Multi-Format Date Normalization**: Automatically handles `DD-MM-YYYY`, `DD/MM/YYYY`, and `YYYY-MM-DD` timestamps without casting failures.
 
 ### 2. Explainable AI (XAI) Source Attribution & Citations
 * Every response from the AI Finance Controller cites the exact evidence used:
-  * 📄 **Document Badges**: Direct page-level citations (e.g., `invoices_august.pdf (p. 1)`) with hoverable text snippets from PGVector.
-  * 📊 **SQL Badges**: Cites active tabular datasets (e.g., `razorpay_settlements_august.csv`, `bank_statement_august.csv`).
+  * **Document Badges**: Direct page-level citations (e.g., `invoices_august_2026.pdf (p. 1)`) with text snippets from PGVector.
+  * **SQL Badges**: Cites active tabular datasets (e.g., `razorpay_settlements_august_2026.csv`, `bank_statement_august_2026.csv`).
 * Zero hallucination proof for audit trails and compliance reviews.
 
 ### 3. Stateful LangGraph PDF Extractor & Reconciler
@@ -34,12 +37,12 @@ An autonomous, multi-source financial reconciliation engine and AI Finance Contr
 * Projects upcoming net settlement inflows for next-week cash flow planning.
 
 ### 5. Official PDF Audit Report Generator
-* One-click generation of professional executive reconciliation audit reports via **ReportLab**.
+* One-click generation of executive reconciliation audit reports via **ReportLab**.
 * Features TrueType Unicode Indian Rupee (`₹`) vector rendering, live generation timestamps, KPI summary metrics, and categorized exception tables.
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
                                  ┌───────────────────────────────┐
@@ -64,15 +67,15 @@ An autonomous, multi-source financial reconciliation engine and AI Finance Contr
               │                                                                       │
               ▼                                                                       ▼
 ┌───────────────────────────────┐                                     ┌───────────────────────────────┐
-│     Multi-Month Datasets      │                                     │      PostgreSQL + PGVector    │
-│  • data/july/                 │                                     │  • 384-dim Dense Embeddings   │
-│  • data/august/               │                                     │  • Chunk Metadata & Sources   │
+│     Hierarchical Datasets     │                                     │      PostgreSQL + PGVector    │
+│  • data/2026/july/            │                                     │  • 384-dim Dense Embeddings   │
+│  • data/2026/august/          │                                     │  • Chunk Metadata & Sources   │
 └───────────────────────────────┘                                     └───────────────────────────────┘
 ```
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 razorpay-reconciler/
@@ -86,7 +89,7 @@ razorpay-reconciler/
 │   │   │   └── pdf_report_generator.py # ReportLab PDF Audit Report Generator
 │   │   ├── worker.py                   # Celery Worker for Background Vector Ingestion
 │   │   └── main.py                     # FastAPI REST API Endpoints
-│   ├── generate_monthly_data.py        # Automated Dataset Generator for any Month
+│   ├── generate_monthly_data.py        # Automated Dataset Generator for any Month/Year
 │   ├── Dockerfile                      # Backend Container Definition
 │   └── requirements.txt                # Python Dependencies
 │
@@ -98,8 +101,8 @@ razorpay-reconciler/
 │   └── package.json                    # Node Dependencies
 │
 ├── data/
-│   ├── july/                           # July 2026 Dataset (PDFs, Razorpay CSVs, Bank CSVs)
-│   └── august/                         # August 2026 Dataset (PDFs, Razorpay CSVs, Bank CSVs)
+│   ├── 2026/july/                      # July 2026 Dataset (PDFs, Razorpay CSVs, Bank CSVs)
+│   └── 2026/august/                    # August 2026 Dataset (PDFs, Razorpay CSVs, Bank CSVs)
 │
 ├── .github/workflows/
 │   └── ci.yml                          # GitHub Actions CI Pipeline (Python Tests + Next.js Build)
@@ -110,7 +113,7 @@ razorpay-reconciler/
 
 ---
 
-## ⚡ Quickstart Guide
+## Quickstart Guide
 
 ### Prerequisites
 * [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Docker Compose v2+)
@@ -118,8 +121,8 @@ razorpay-reconciler/
 
 ### 1. Clone & Configure Environment
 ```bash
-git clone https://github.com/ro-lex404/razorpay-reconciler.git
-cd razorpay-reconciler
+git clone https://github.com/ro-lex404/reconciler.git
+cd reconciler
 cp .env.example .env
 ```
 Edit `.env` and add your Groq API key:
@@ -138,24 +141,24 @@ docker compose up --build
 
 ---
 
-## 🧪 Testing & Verification
+## Testing & Verification
 
-### Running the CI Pipeline Locally
+### Running Tests Locally
 ```bash
 # Backend Test & Reconciliation Verification
-cd backend
-python -c "from app.services.reconciliation import reconcile_settlements, resolve_finance_dataset_paths; rp, bk = resolve_finance_dataset_paths(); res = reconcile_settlements(rp, bk); print('Reconciliation OK. Matched:', res['matched_transactions'], 'Rate:', res['match_rate'])"
+$env:PYTHONPATH="backend"
+python -m unittest discover -s backend/tests -p "test_*.py" -v
 
 # Frontend Build & Typecheck
-cd ../frontend
+cd frontend
 npm run build
 ```
 
 ---
 
-## 💡 Suggested Prompt Inquiries
+## Suggested Prompt Inquiries
 
-In the **AI Agent Chat** tab, test queries such as:
+In the **AI Controller Chat** tab, test queries such as:
 1. `"What's the total unreconciled amount?"`
 2. `"Why was REF1004 flagged?"`
 3. `"Show me all exceptions above ₹1,000"`
@@ -164,5 +167,5 @@ In the **AI Agent Chat** tab, test queries such as:
 
 ---
 
-## 📄 License
+## License
 MIT License. Built for the Razorpay Buildathon 2026 (Track 04: AI Finance Controller).
