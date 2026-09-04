@@ -598,17 +598,19 @@ export default function Home() {
             <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden backdrop-blur-sm">
               <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
               
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-                <div>
-                  <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                    PDF Invoice Extractor & Settlement Reconciler
-                  </h2>
-                  <p className="text-sm text-slate-400 mt-1 max-w-2xl">
-                    Extract multi-page invoice records via Groq Llama 3.3 70B, match against active banking ledgers, and resolve Many-to-One lump-sum settlement batches in DuckDB.
-                  </p>
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                <div className="lg:col-span-7 xl:col-span-7 flex flex-col justify-between">
+                  <div>
+                    <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                      PDF Invoice Extractor & Settlement Reconciler
+                    </h2>
+                    <p className="text-sm text-slate-400 mt-1">
+                      Extract multi-page invoice records via Groq Llama 3.3 70B, match against active banking ledgers, and resolve Many-to-One lump-sum settlement batches in DuckDB.
+                    </p>
+                  </div>
                   
                   {/* Current Active Dataset Badges */}
-                  <div className="flex flex-wrap items-center gap-2 mt-3 text-xs">
+                  <div className="flex flex-wrap items-center gap-2 mt-4 text-xs">
                     <span className="text-slate-400">Active Period:</span>
                     <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-md font-mono font-bold capitalize">
                       {selectedYear} / {activeMonth}
@@ -653,27 +655,29 @@ export default function Home() {
                 </div>
 
                 {/* Upload Action Box */}
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 bg-slate-950/80 p-3 rounded-xl border border-slate-800">
-                  <input
-                    type="file"
-                    accept=".pdf"
-                    onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
-                    className="text-xs text-slate-300 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer"
-                  />
-                  <button
-                    onClick={handlePdfExtract}
-                    disabled={!pdfFile || isPdfLoading}
-                    className="px-5 py-2 text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center gap-2 shrink-0"
-                  >
-                    {isPdfLoading ? (
-                      <>
-                        <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        Extracting & Matching...
-                      </>
-                    ) : (
-                      'Extract & Reconcile'
-                    )}
-                  </button>
+                <div className="lg:col-span-5 xl:col-span-5 flex flex-col justify-start">
+                  <div className="bg-slate-950/90 p-3 rounded-xl border border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 min-h-[58px]">
+                    <input
+                      type="file"
+                      accept=".pdf"
+                      onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
+                      className="min-w-0 flex-1 text-xs text-slate-300 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer"
+                    />
+                    <button
+                      onClick={handlePdfExtract}
+                      disabled={!pdfFile || isPdfLoading}
+                      className="h-10 px-5 text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center gap-2 shrink-0 whitespace-nowrap"
+                    >
+                      {isPdfLoading ? (
+                        <>
+                          <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          <span>Extracting & Matching...</span>
+                        </>
+                      ) : (
+                        'Extract & Reconcile'
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
 
