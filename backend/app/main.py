@@ -21,6 +21,7 @@ from app.services.reconciliation import (
 )
 from app.agent.pdf_reconciler import pdf_reconciler_graph
 from app.services.pdf_report_generator import generate_reconciliation_pdf_report
+from app.services.excel_report_generator import generate_reconciliation_excel_report
 
 # Import the Celery worker task and compiled LangGraph workflow
 from app.worker import process_document_task
@@ -417,5 +418,27 @@ async def export_audit_pdf_report(request: AuditReportRequest):
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.post("/finance/export-excel")
+async def export_audit_excel_report(request: AuditReportRequest):
+    """Generates and downloads a multi-tab Excel (.xlsx) reconciliation workbook for auditors."""
+    excel_bytes = generate_reconciliation_excel_report(
+        source_filename=request.source_filename,
+        extracted_count=request.extracted_count,
+        matched_count=request.matched_count,
+        exception_count=request.exception_count,
+        exceptions=request.exceptions,
+        matches=request.matches,
+    )
+
+    clean_name = request.source_filename.replace(".pdf", "").replace(".png", "").replace(".jpg", "")
+    filename = f"Reconciliation_Workbook_{clean_name}.xlsx"
+
+    return Response(
+        content=excel_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )

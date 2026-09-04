@@ -156,6 +156,21 @@ export default function Home() {
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const [pdfResult, setPdfResult] = useState<ExtractPDFResponse | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+
+  // --- Financial Table Filter, Sort & Tab States ---
+  const [activeTableTab, setActiveTableTab] = useState<'exceptions' | 'matches' | 'extracted'>('exceptions');
+  const [tableSearch, setTableSearch] = useState('');
+  const [anomalyFilter, setAnomalyFilter] = useState('ALL');
+  const [severityFilter, setSeverityFilter] = useState('ALL');
+  const [sortBy, setSortBy] = useState<'default' | 'amount_desc' | 'amount_asc' | 'date_desc' | 'date_asc'>('default');
+
+  // --- 3-Way Triangulation Inspector Modal State ---
+  const [inspectRecord, setInspectRecord] = useState<any | null>(null);
+  const [inspectType, setInspectType] = useState<'exception' | 'match' | 'extracted' | null>(null);
+  const [resolutionStatusMap, setResolutionStatusMap] = useState<Record<string, string>>({});
+  const [copiedNotification, setCopiedNotification] = useState(false);
+  const [isPeriodLocked, setIsPeriodLocked] = useState(false);
 
   // Close calendar popover on outside click
   useEffect(() => {
@@ -417,6 +432,54 @@ export default function Home() {
     } finally {
       setIsExporting(false);
     }
+  };
+
+  // --- Export Excel Workbook (.xlsx) Logic ---
+  const handleExportExcel = async () => {
+    if (!pdfResult) return;
+    setIsExportingExcel(true);
+
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/finance/export-excel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source_filename: pdfResult.source,
+          extracted_count: pdfResult.extracted_count,
+          matched_count: pdfResult.reconciliation.matched_count,
+          exception_count: pdfResult.reconciliation.exception_count,
+          exceptions: pdfResult.reconciliation.exceptions,
+          matches: pdfResult.reconciliation.matches,
+        }),
+      });
+
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const cleanName = pdfResult.source.replace(/\.(pdf|png|jpg|jpeg|webp)/i, '');
+        a.download = `Reconciliation_Workbook_${cleanName}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      } else {
+        alert('Failed to generate Excel reconciliation workbook.');
+      }
+    } catch {
+      alert('Error connecting to backend API.');
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
+  // --- Copy Gateway Support Tracer Helper ---
+  const handleCopyTracer = (ref: string, amount: number, excType: string) => {
+    const text = `RAZORPAY SETTLEMENT INQUIRY TICKET\n----------------------------------------\nReference ID: ${ref}\nAccounting Period: ${selectedYear}/${activeMonth}\nGross Invoice Amount: ₹${amount?.toFixed(2)}\nAnomaly Class: ${excType}\nRequested Action: Please provide settlement trace log & fee breakdown for payout reconciliation.`;
+    navigator.clipboard.writeText(text);
+    setCopiedNotification(true);
+    setTimeout(() => setCopiedNotification(false), 2500);
   };
 
   return (
@@ -735,105 +798,477 @@ export default function Home() {
               </div>
             )}
 
-            {/* Extracted Invoices Table */}
+            {/* Financial Ledger Tables & Audit Workspace */}
             {pdfResult && (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    Extracted Invoice & Receipt Records ({pdfResult.records.length})
-                  </h3>
-                  <span className="text-xs text-slate-400">Strict Financial Schema Validation</span>
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
+                {/* Table Header & View Mode Switcher */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
+                  <div className="flex items-center gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                    <button
+                      onClick={() => setActiveTableTab('exceptions')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        activeTableTab === 'exceptions'
+                          ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse" />
+                      Flagged Exceptions ({pdfResult.reconciliation.exceptions.length})
+                    </button>
+                    <button
+                      onClick={() => setActiveTableTab('matches')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        activeTableTab === 'matches'
+                          ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                      Matched Transactions ({pdfResult.reconciliation.matches.length})
+                    </button>
+                    <button
+                      onClick={() => setActiveTableTab('extracted')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        activeTableTab === 'extracted'
+                          ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-blue-400" />
+                      Raw Extracted ({pdfResult.records.length})
+                    </button>
+                  </div>
+
+                  {/* Financial Report Export & Sign-off Actions */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={handleExportReport}
+                      disabled={isExporting}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5"
+                      title="Download PDF compliance audit report"
+                    >
+                      <span>📄</span>
+                      {isExporting ? 'Generating PDF...' : 'Export PDF Report'}
+                    </button>
+
+                    <button
+                      onClick={handleExportExcel}
+                      disabled={isExportingExcel}
+                      className="px-3 py-1.5 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-800/80 rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5"
+                      title="Download multi-tab Excel reconciliation workbook"
+                    >
+                      <span>📊</span>
+                      {isExportingExcel ? 'Generating XLSX...' : 'Export Excel (.xlsx)'}
+                    </button>
+
+                    <button
+                      onClick={() => setIsPeriodLocked(!isPeriodLocked)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5 ${
+                        isPeriodLocked
+                          ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-600/30'
+                          : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                      }`}
+                      title="Controller Audit Lock"
+                    >
+                      <span>{isPeriodLocked ? '🔒' : '🔓'}</span>
+                      {isPeriodLocked ? 'Period Locked & Certified' : 'Lock Period'}
+                    </button>
+                  </div>
                 </div>
 
-                <div className="overflow-x-auto border border-slate-800 rounded-xl">
-                  <table className="min-w-full divide-y divide-slate-800 text-xs">
-                    <thead className="bg-slate-950/70 text-slate-400 uppercase font-semibold">
-                      <tr>
-                        <th className="px-4 py-3 text-left">Invoice Ref</th>
-                        <th className="px-4 py-3 text-left">Invoice Date</th>
-                        <th className="px-4 py-3 text-right">Amount (₹)</th>
-                        <th className="px-4 py-3 text-left">Description</th>
-                        <th className="px-4 py-3 text-center">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
-                      {pdfResult.records.slice(0, 15).map((r, i) => (
-                        <tr key={i} className="hover:bg-slate-800/40 transition-colors">
-                          <td className="px-4 py-2.5 font-mono font-medium text-blue-400">{r.ref}</td>
-                          <td className="px-4 py-2.5 text-slate-300">{r.date}</td>
-                          <td className="px-4 py-2.5 text-right font-mono font-semibold text-white">
-                            ₹{r.amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </td>
-                          <td className="px-4 py-2.5 text-slate-400 max-w-xs truncate">{r.description || 'Standard Invoice'}</td>
-                          <td className="px-4 py-2.5 text-center">
-                            <span className="px-2 py-0.5 text-[10px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full">
-                              Extracted
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
+                {/* Instant Search & Multi-Column Filter Toolbar */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-center text-xs">
+                  <div className="lg:col-span-5 relative">
+                    <input
+                      type="text"
+                      value={tableSearch}
+                      onChange={(e) => setTableSearch(e.target.value)}
+                      placeholder="Search by Ref ID, Amount, Date, Action, or Anomaly..."
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white placeholder-slate-500 outline-none focus:border-blue-500"
+                    />
+                    {tableSearch && (
+                      <button
+                        onClick={() => setTableSearch('')}
+                        className="absolute right-3 top-2 text-slate-400 hover:text-white text-xs font-bold"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
 
-            {/* Exceptions Table */}
-            {pdfResult && pdfResult.reconciliation.exceptions.length > 0 && (
-              <div className="bg-slate-900 border border-rose-900/40 rounded-2xl p-6 shadow-xl space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-base font-bold text-rose-400 flex items-center gap-2">
-                    Reconciliation Exceptions & Action Items ({pdfResult.reconciliation.exceptions.length})
-                  </h3>
-                  <span className="text-xs text-rose-400/80 font-medium">Categorized Anomaly Action Items</span>
+                  {activeTableTab === 'exceptions' && (
+                    <>
+                      <div className="lg:col-span-3">
+                        <select
+                          value={anomalyFilter}
+                          onChange={(e) => setAnomalyFilter(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-slate-300 outline-none focus:border-blue-500"
+                        >
+                          <option value="ALL">All Anomaly Classes</option>
+                          <option value="AMOUNT_MISMATCH">AMOUNT_MISMATCH</option>
+                          <option value="DATE_MISMATCH">DATE_MISMATCH</option>
+                          <option value="MISSING_BANK">MISSING_BANK</option>
+                          <option value="MISSING_INVOICE">MISSING_INVOICE</option>
+                          <option value="DUPLICATE">DUPLICATE</option>
+                          <option value="GHOST_CREDIT">GHOST_CREDIT</option>
+                        </select>
+                      </div>
+
+                      <div className="lg:col-span-2">
+                        <select
+                          value={severityFilter}
+                          onChange={(e) => setSeverityFilter(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-slate-300 outline-none focus:border-blue-500"
+                        >
+                          <option value="ALL">All Severities</option>
+                          <option value="HIGH">High Severity</option>
+                          <option value="MEDIUM">Medium Severity</option>
+                          <option value="LOW">Low Severity</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
+
+                  <div className={`${activeTableTab === 'exceptions' ? 'lg:col-span-2' : 'lg:col-span-4'}`}>
+                    <select
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value as any)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-slate-300 outline-none focus:border-blue-500"
+                    >
+                      <option value="default">Sort: Default Order</option>
+                      <option value="amount_desc">Amount: High to Low</option>
+                      <option value="amount_asc">Amount: Low to High</option>
+                      <option value="date_desc">Date: Newest First</option>
+                      <option value="date_asc">Date: Oldest First</option>
+                    </select>
+                  </div>
                 </div>
 
-                <div className="overflow-x-auto border border-slate-800 rounded-xl">
-                  <table className="min-w-full divide-y divide-slate-800 text-xs">
-                    <thead className="bg-slate-950/70 text-slate-400 uppercase font-semibold">
-                      <tr>
-                        <th className="px-4 py-3 text-left">Invoice Ref</th>
-                        <th className="px-4 py-3 text-right">Amount (₹)</th>
-                        <th className="px-4 py-3 text-left">Exception Type</th>
-                        <th className="px-4 py-3 text-center">Severity</th>
-                        <th className="px-4 py-3 text-left">Recommended Controller Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
-                      {pdfResult.reconciliation.exceptions.map((ex, i) => (
-                        <tr key={i} className="hover:bg-slate-800/40 transition-colors">
-                          <td className="px-4 py-2.5 font-mono font-medium text-rose-400">{ex.invoice_ref}</td>
-                          <td className="px-4 py-2.5 text-right font-mono font-semibold text-white">
-                            ₹{ex.invoice_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </td>
-                          <td className="px-4 py-2.5 font-mono text-[11px]">
-                            <span className={`px-2 py-0.5 rounded-md font-semibold border ${
-                              ex.exception_type === 'AMOUNT_MISMATCH'
-                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                                : ex.exception_type === 'DATE_MISMATCH'
-                                ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
-                                : ex.exception_type === 'MISSING_BANK'
-                                ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                                : ex.exception_type === 'MISSING_INVOICE'
-                                ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
-                                : ex.exception_type === 'DUPLICATE'
-                                ? 'bg-orange-500/10 text-orange-400 border-orange-500/20'
-                                : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                            }`}>
-                              {ex.exception_type}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2.5 text-center">
-                            <span className="px-2 py-0.5 text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-full">
-                              {ex.severity || 'HIGH'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2.5 text-slate-300 font-medium">{ex.recommended_action}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                {/* TAB CONTENT 1: FLAGGED EXCEPTIONS */}
+                {activeTableTab === 'exceptions' && (
+                  <div className="space-y-2">
+                    {(() => {
+                      let list = pdfResult.reconciliation.exceptions;
+
+                      if (tableSearch.trim()) {
+                        const q = tableSearch.toLowerCase();
+                        list = list.filter(
+                          (ex) =>
+                            ex.invoice_ref.toLowerCase().includes(q) ||
+                            ex.invoice_amount.toString().includes(q) ||
+                            ex.exception_type.toLowerCase().includes(q) ||
+                            ex.recommended_action.toLowerCase().includes(q) ||
+                            ex.invoice_date.toLowerCase().includes(q)
+                        );
+                      }
+
+                      if (anomalyFilter !== 'ALL') {
+                        list = list.filter((ex) => ex.exception_type.toUpperCase() === anomalyFilter);
+                      }
+
+                      if (severityFilter !== 'ALL') {
+                        list = list.filter((ex) => (ex.severity || 'HIGH').toUpperCase() === severityFilter);
+                      }
+
+                      if (sortBy === 'amount_desc') {
+                        list = [...list].sort((a, b) => b.invoice_amount - a.invoice_amount);
+                      } else if (sortBy === 'amount_asc') {
+                        list = [...list].sort((a, b) => a.invoice_amount - b.invoice_amount);
+                      } else if (sortBy === 'date_desc') {
+                        list = [...list].sort((a, b) => b.invoice_date.localeCompare(a.invoice_date));
+                      } else if (sortBy === 'date_asc') {
+                        list = [...list].sort((a, b) => a.invoice_date.localeCompare(b.invoice_date));
+                      }
+
+                      if (list.length === 0) {
+                        return (
+                          <div className="p-8 text-center text-xs text-slate-400 bg-slate-950/60 rounded-xl border border-slate-800">
+                            No exceptions match current search/filter criteria.
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="overflow-x-auto border border-rose-900/40 rounded-xl shadow-lg">
+                          <table className="min-w-full divide-y divide-slate-800 text-xs">
+                            <thead className="bg-slate-950/80 text-slate-400 uppercase font-semibold">
+                              <tr>
+                                <th className="px-4 py-3 text-left">Invoice Ref</th>
+                                <th className="px-4 py-3 text-left">Date</th>
+                                <th className="px-4 py-3 text-right">Gross Amount</th>
+                                <th className="px-4 py-3 text-left">Anomaly Category</th>
+                                <th className="px-4 py-3 text-center">Severity</th>
+                                <th className="px-4 py-3 text-left">Recommended Action</th>
+                                <th className="px-4 py-3 text-center">Resolution</th>
+                                <th className="px-4 py-3 text-center">Action</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
+                              {list.map((ex, i) => {
+                                const customStatus = resolutionStatusMap[ex.invoice_ref];
+                                return (
+                                  <tr
+                                    key={i}
+                                    onClick={() => {
+                                      setInspectRecord(ex);
+                                      setInspectType('exception');
+                                    }}
+                                    className="hover:bg-slate-800/60 transition-colors cursor-pointer group"
+                                  >
+                                    <td className="px-4 py-2.5 font-mono font-bold text-rose-400 flex items-center gap-1.5">
+                                      <span>{ex.invoice_ref}</span>
+                                    </td>
+                                    <td className="px-4 py-2.5 text-slate-300 font-mono">{ex.invoice_date}</td>
+                                    <td className="px-4 py-2.5 text-right font-mono font-bold text-white whitespace-nowrap">
+                                      ₹{ex.invoice_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </td>
+                                    <td className="px-4 py-2.5 font-mono text-[11px]">
+                                      <span
+                                        className={`px-2 py-0.5 rounded-md font-semibold border ${
+                                          ex.exception_type === 'AMOUNT_MISMATCH'
+                                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                            : ex.exception_type === 'DATE_MISMATCH'
+                                            ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                                            : ex.exception_type === 'MISSING_BANK'
+                                            ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                                            : ex.exception_type === 'MISSING_INVOICE'
+                                            ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                                            : ex.exception_type === 'DUPLICATE'
+                                            ? 'bg-orange-500/10 text-orange-400 border-orange-500/20'
+                                            : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                                        }`}
+                                      >
+                                        {ex.exception_type}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-2.5 text-center">
+                                      <span className="px-2 py-0.5 text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-full uppercase">
+                                        {ex.severity || 'HIGH'}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-2.5 text-slate-300 font-medium max-w-xs truncate" title={ex.recommended_action}>
+                                      {ex.recommended_action}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-center whitespace-nowrap">
+                                      {customStatus ? (
+                                        <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full">
+                                          {customStatus}
+                                        </span>
+                                      ) : (
+                                        <span className="px-2 py-0.5 text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700 rounded-full">
+                                          Pending Review
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-center whitespace-nowrap">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setInspectRecord(ex);
+                                          setInspectType('exception');
+                                        }}
+                                        className="px-2.5 py-1 text-[11px] font-bold bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/30 rounded-lg transition-all"
+                                      >
+                                        Inspect 3-Way
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* TAB CONTENT 2: MATCHED TRANSACTIONS */}
+                {activeTableTab === 'matches' && (
+                  <div className="space-y-2">
+                    {(() => {
+                      let list = pdfResult.reconciliation.matches;
+
+                      if (tableSearch.trim()) {
+                        const q = tableSearch.toLowerCase();
+                        list = list.filter(
+                          (m) =>
+                            m.invoice_ref.toLowerCase().includes(q) ||
+                            m.invoice_amount.toString().includes(q) ||
+                            (m.match_type && m.match_type.toLowerCase().includes(q)) ||
+                            m.invoice_date.toLowerCase().includes(q)
+                        );
+                      }
+
+                      if (sortBy === 'amount_desc') {
+                        list = [...list].sort((a, b) => b.invoice_amount - a.invoice_amount);
+                      } else if (sortBy === 'amount_asc') {
+                        list = [...list].sort((a, b) => a.invoice_amount - b.invoice_amount);
+                      } else if (sortBy === 'date_desc') {
+                        list = [...list].sort((a, b) => b.invoice_date.localeCompare(a.invoice_date));
+                      } else if (sortBy === 'date_asc') {
+                        list = [...list].sort((a, b) => a.invoice_date.localeCompare(b.invoice_date));
+                      }
+
+                      if (list.length === 0) {
+                        return (
+                          <div className="p-8 text-center text-xs text-slate-400 bg-slate-950/60 rounded-xl border border-slate-800">
+                            No matched transactions match current search criteria.
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="overflow-x-auto border border-emerald-900/40 rounded-xl shadow-lg">
+                          <table className="min-w-full divide-y divide-slate-800 text-xs">
+                            <thead className="bg-slate-950/80 text-slate-400 uppercase font-semibold">
+                              <tr>
+                                <th className="px-4 py-3 text-left">Invoice Ref</th>
+                                <th className="px-4 py-3 text-left">Invoice Date</th>
+                                <th className="px-4 py-3 text-right">Invoice Amount</th>
+                                <th className="px-4 py-3 text-left">Bank Value Date</th>
+                                <th className="px-4 py-3 text-right">Bank Settled</th>
+                                <th className="px-4 py-3 text-left">Match Classification</th>
+                                <th className="px-4 py-3 text-center">Confidence</th>
+                                <th className="px-4 py-3 text-center">Action</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
+                              {list.map((m, i) => (
+                                <tr
+                                  key={i}
+                                  onClick={() => {
+                                    setInspectRecord(m);
+                                    setInspectType('match');
+                                  }}
+                                  className="hover:bg-slate-800/60 transition-colors cursor-pointer group"
+                                >
+                                  <td className="px-4 py-2.5 font-mono font-bold text-emerald-400">{m.invoice_ref}</td>
+                                  <td className="px-4 py-2.5 text-slate-300 font-mono">{m.invoice_date}</td>
+                                  <td className="px-4 py-2.5 text-right font-mono font-bold text-white whitespace-nowrap">
+                                    ₹{m.invoice_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </td>
+                                  <td className="px-4 py-2.5 text-slate-300 font-mono">{m.bank_date || m.invoice_date}</td>
+                                  <td className="px-4 py-2.5 text-right font-mono font-bold text-emerald-400 whitespace-nowrap">
+                                    ₹{(m.bank_amount || m.invoice_amount)?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </td>
+                                  <td className="px-4 py-2.5 text-slate-300">
+                                    <span className="px-2 py-0.5 text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md">
+                                      {m.match_type || 'Exact Match'}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-2.5 text-center">
+                                    <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full">
+                                      {((m.confidence || 1.0) * 100).toFixed(0)}%
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-2.5 text-center whitespace-nowrap">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setInspectRecord(m);
+                                        setInspectType('match');
+                                      }}
+                                      className="px-2.5 py-1 text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 rounded-lg transition-all"
+                                    >
+                                      Inspect
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* TAB CONTENT 3: RAW EXTRACTED INVOICES */}
+                {activeTableTab === 'extracted' && (
+                  <div className="space-y-2">
+                    {(() => {
+                      let list = pdfResult.records;
+
+                      if (tableSearch.trim()) {
+                        const q = tableSearch.toLowerCase();
+                        list = list.filter(
+                          (r) =>
+                            r.ref.toLowerCase().includes(q) ||
+                            r.amount.toString().includes(q) ||
+                            r.date.toLowerCase().includes(q) ||
+                            (r.description && r.description.toLowerCase().includes(q))
+                        );
+                      }
+
+                      if (sortBy === 'amount_desc') {
+                        list = [...list].sort((a, b) => b.amount - a.amount);
+                      } else if (sortBy === 'amount_asc') {
+                        list = [...list].sort((a, b) => a.amount - b.amount);
+                      } else if (sortBy === 'date_desc') {
+                        list = [...list].sort((a, b) => b.date.localeCompare(a.date));
+                      } else if (sortBy === 'date_asc') {
+                        list = [...list].sort((a, b) => a.date.localeCompare(b.date));
+                      }
+
+                      return (
+                        <div className="overflow-x-auto border border-slate-800 rounded-xl shadow-lg">
+                          <table className="min-w-full divide-y divide-slate-800 text-xs">
+                            <thead className="bg-slate-950/80 text-slate-400 uppercase font-semibold">
+                              <tr>
+                                <th className="px-4 py-3 text-left">Invoice Ref</th>
+                                <th className="px-4 py-3 text-left">Invoice Date</th>
+                                <th className="px-4 py-3 text-right">Amount (₹)</th>
+                                <th className="px-4 py-3 text-left">Description</th>
+                                <th className="px-4 py-3 text-center">Status</th>
+                                <th className="px-4 py-3 text-center">Action</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
+                              {list.map((r, i) => (
+                                <tr
+                                  key={i}
+                                  onClick={() => {
+                                    setInspectRecord(r);
+                                    setInspectType('extracted');
+                                  }}
+                                  className="hover:bg-slate-800/40 transition-colors cursor-pointer group"
+                                >
+                                  <td className="px-4 py-2.5 font-mono font-medium text-blue-400">{r.ref}</td>
+                                  <td className="px-4 py-2.5 text-slate-300 font-mono">{r.date}</td>
+                                  <td className="px-4 py-2.5 text-right font-mono font-bold text-white whitespace-nowrap">
+                                    ₹{r.amount?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </td>
+                                  <td className="px-4 py-2.5 text-slate-400 max-w-xs truncate">{r.description || 'Standard Invoice Item'}</td>
+                                  <td className="px-4 py-2.5 text-center">
+                                    <span className="px-2 py-0.5 text-[10px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full">
+                                      {r.status || 'PAID'}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-2.5 text-center whitespace-nowrap">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setInspectRecord(r);
+                                        setInspectType('extracted');
+                                      }}
+                                      className="px-2.5 py-1 text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 rounded-lg transition-all"
+                                    >
+                                      Inspect
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1422,6 +1857,293 @@ export default function Home() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* ============================================================ */}
+      {/* MODAL: 3-WAY TRIANGULATION INSPECTOR & AUDIT BREAKDOWN */}
+      {/* ============================================================ */}
+      {inspectRecord && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-3xl w-full p-6 sm:p-7 shadow-2xl space-y-5 my-8">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between border-b border-slate-800 pb-4">
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <span className="font-mono text-sm font-black text-white px-2.5 py-0.5 bg-blue-500/10 border border-blue-500/20 rounded-md">
+                    {inspectRecord.invoice_ref || inspectRecord.ref}
+                  </span>
+                  <span
+                    className={`px-2.5 py-0.5 text-xs font-bold rounded-full border ${
+                      inspectType === 'exception'
+                        ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                        : inspectType === 'match'
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                        : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                    }`}
+                  >
+                    {inspectType === 'exception'
+                      ? inspectRecord.exception_type
+                      : inspectType === 'match'
+                      ? inspectRecord.match_type || 'RECONCILED'
+                      : 'RAW EXTRACTED'}
+                  </span>
+                  <span className="text-xs text-slate-400 font-mono">
+                    Period: {selectedYear}/{activeMonth}
+                  </span>
+                </div>
+                <h3 className="text-base font-bold text-white mt-1.5">
+                  3-Way Cross-Ledger Triangulation Inspector
+                </h3>
+              </div>
+              <button
+                onClick={() => setInspectRecord(null)}
+                className="text-slate-400 hover:text-white text-xl font-bold p-1 rounded-lg hover:bg-slate-800"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* 3-Column Triangulation Matrix */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+              {/* Column 1: Source Document Invoice */}
+              <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-2.5 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                    <span className="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-blue-400" />
+                      1. Source Invoice
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">PDF/OCR</span>
+                  </div>
+
+                  <div className="space-y-1.5 pt-2 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Reference:</span>
+                      <span className="font-mono font-bold text-slate-200">
+                        {inspectRecord.invoice_ref || inspectRecord.ref}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Document Date:</span>
+                      <span className="font-mono text-slate-300">
+                        {inspectRecord.invoice_date || inspectRecord.date}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Billed Status:</span>
+                      <span className="text-emerald-400 font-semibold">PAID</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-800 flex justify-between items-baseline">
+                  <span className="text-[11px] text-slate-400">Gross Invoice:</span>
+                  <span className="font-mono font-bold text-sm text-white">
+                    ₹{(inspectRecord.invoice_amount || inspectRecord.amount || 0).toLocaleString('en-IN', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
+              </div>
+
+              {/* Column 2: Gateway Settlement Line */}
+              <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-2.5 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                    <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-indigo-400" />
+                      2. Gateway Report
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">Razorpay</span>
+                  </div>
+
+                  {(() => {
+                    const gross = inspectRecord.invoice_amount || inspectRecord.amount || 0;
+                    const feeEst = gross * 0.02;
+                    const gstEst = feeEst * 0.18;
+                    const netEst = gross - (feeEst + gstEst);
+
+                    return (
+                      <div className="space-y-1.5 pt-2 text-xs">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Payout Batch:</span>
+                          <span className="font-mono text-slate-300 truncate max-w-[100px]">
+                            batch_{activeMonth}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">MDR Fee (2%):</span>
+                          <span className="font-mono text-rose-400">-₹{feeEst.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">GST on Fee (18%):</span>
+                          <span className="font-mono text-rose-400">-₹{gstEst.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {(() => {
+                  const gross = inspectRecord.invoice_amount || inspectRecord.amount || 0;
+                  const netEst = gross - gross * 0.0236;
+                  return (
+                    <div className="pt-2 border-t border-slate-800 flex justify-between items-baseline">
+                      <span className="text-[11px] text-slate-400">Net Expected:</span>
+                      <span className="font-mono font-bold text-sm text-indigo-300">
+                        ₹{netEst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Column 3: Bank Statement Credit Entry */}
+              <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-2.5 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                    <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                      3. Bank Ledger
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">Statement</span>
+                  </div>
+
+                  <div className="space-y-1.5 pt-2 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Value Date:</span>
+                      <span className="font-mono text-slate-300">
+                        {inspectRecord.bank_date || inspectRecord.invoice_date || inspectRecord.date}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Narration / UTR:</span>
+                      <span className="font-mono text-slate-300 truncate max-w-[100px]">
+                        CMS/RPAY/{inspectRecord.invoice_ref || inspectRecord.ref}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Clearing Status:</span>
+                      <span className="text-emerald-400 font-semibold">Cleared</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-800 flex justify-between items-baseline">
+                  <span className="text-[11px] text-slate-400">Bank Deposited:</span>
+                  <span className="font-mono font-bold text-sm text-emerald-400">
+                    ₹{((inspectRecord.bank_amount ?? (inspectRecord.invoice_amount || inspectRecord.amount)) || 0).toLocaleString(
+                      'en-IN',
+                      { minimumFractionDigits: 2 }
+                    )}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Variance & Mathematical Delta Breakdown */}
+            <div className="p-4 bg-slate-950/90 rounded-2xl border border-slate-800 space-y-2.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-300 uppercase tracking-wider">
+                  Audit Variance Decomposition
+                </span>
+                {inspectRecord.exception_type && (
+                  <span className="font-mono font-bold text-rose-400">
+                    Anomaly Class: {inspectRecord.exception_type}
+                  </span>
+                )}
+              </div>
+
+              {(() => {
+                const gross = inspectRecord.invoice_amount || inspectRecord.amount || 0;
+                const bank = inspectRecord.bank_amount ?? gross;
+                const delta = gross - bank;
+
+                return (
+                  <div className="grid grid-cols-3 gap-2 text-center text-xs py-2 bg-slate-900/60 rounded-xl border border-slate-800/80 font-mono">
+                    <div>
+                      <span className="text-slate-400 text-[10px] block">Invoice Gross</span>
+                      <span className="font-bold text-white">₹{gross.toFixed(2)}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 text-[10px] block">Bank Realized</span>
+                      <span className="font-bold text-emerald-400">₹{bank.toFixed(2)}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 text-[10px] block">Ledger Variance (Δ)</span>
+                      <span className={`font-bold ${delta !== 0 ? 'text-rose-400' : 'text-slate-400'}`}>
+                        {delta > 0 ? `-₹${delta.toFixed(2)}` : delta < 0 ? `+₹${Math.abs(delta).toFixed(2)}` : '₹0.00'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <p className="text-xs text-slate-300 leading-relaxed">
+                <b className="text-white">Recommended Action:</b>{' '}
+                {inspectRecord.recommended_action ||
+                  'Transaction is fully reconciled with matching banking credit.'}
+              </p>
+            </div>
+
+            {/* Action Buttons & Resolution Controls */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800">
+              <div className="flex flex-wrap items-center gap-2">
+                {inspectType === 'exception' && (
+                  <>
+                    <button
+                      onClick={() => {
+                        const ref = inspectRecord.invoice_ref || inspectRecord.ref;
+                        setResolutionStatusMap((prev) => ({
+                          ...prev,
+                          [ref]: 'RESOLVED (Fee Accepted)',
+                        }));
+                        setInspectRecord(null);
+                      }}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-emerald-600/20"
+                    >
+                      ✓ Accept Fee Variance (GL 6100)
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        const ref = inspectRecord.invoice_ref || inspectRecord.ref;
+                        setResolutionStatusMap((prev) => ({
+                          ...prev,
+                          [ref]: 'INVESTIGATING (Treasury)',
+                        }));
+                        setInspectRecord(null);
+                      }}
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-amber-600/20"
+                    >
+                      ⚠ Assign to Treasury
+                    </button>
+                  </>
+                )}
+
+                <button
+                  onClick={() =>
+                    handleCopyTracer(
+                      inspectRecord.invoice_ref || inspectRecord.ref,
+                      inspectRecord.invoice_amount || inspectRecord.amount,
+                      inspectRecord.exception_type || 'INSPECTION'
+                    )
+                  }
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5"
+                >
+                  <span>📋</span>
+                  {copiedNotification ? 'Copied Tracer Ticket!' : 'Copy Support Ticket'}
+                </button>
+              </div>
+
+              <button
+                onClick={() => setInspectRecord(null)}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
