@@ -106,7 +106,7 @@ def generate_reconciliation_pdf_report(
     """Generates a professional PDF audit report of faulty transactions using ReportLab."""
     if not HAS_REPORTLAB:
         buf = io.StringIO()
-        buf.write(f"NEXUS RECONCILER AUDIT REPORT\n")
+        buf.write(f"NEXUS AI RECONCILER AUDIT REPORT\n")
         buf.write(f"Source: {source_filename}\n")
         buf.write(f"Extracted: {extracted_count}, Matched: {matched_count}, Exceptions: {exception_count}\n\n")
         for exc in exceptions:
@@ -189,9 +189,9 @@ def generate_reconciliation_pdf_report(
     timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Header Title
-    story.append(Paragraph("Razorpay Reconciliation Audit Report", title_style))
+    story.append(Paragraph("Nexus AI Reconciler — Financial Audit Report", title_style))
     story.append(Spacer(1, 4))
-    story.append(Paragraph(f"Faulty Transactions & Discrepancy Breakdown | Generated: {timestamp_str}", subtitle_style))
+    story.append(Paragraph(f"Autonomous 3-Way Reconciliation & Discrepancy Breakdown | Generated: {timestamp_str}", subtitle_style))
     story.append(Spacer(1, 10))
     story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor("#2563EB"), spaceAfter=12))
 

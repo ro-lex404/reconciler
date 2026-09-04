@@ -226,7 +226,7 @@ def synthesizer_node(state: AgentState):
     if groq_api_key:
         try:
             llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0.1, groq_api_key=groq_api_key)
-            system_prompt = """You are an intelligent, executive AI Finance Controller for the Razorpay Financial Reconciliation Engine.
+            system_prompt = """You are an intelligent, executive AI Finance Controller for the Nexus AI Reconciler platform.
 Your goal is to provide concise, direct, professional, and mathematically accurate answers regarding reconciliation metrics, exceptions, transaction references, unreconciled totals, and cash flow forecasting.
 
 Standardized Financial Anomaly Classes:

@@ -1,10 +1,10 @@
-# Razorpay AI Finance Controller & Reconciliation Engine
+# Nexus AI Reconciler
 
 > **Track 04: AI Finance Controller — Run the books and the cash position**  
 > *Razorpay Buildathon 2026*  
 > 🌐 **Live Cloud Deployment**: [http://44.203.41.225:3000/](http://44.203.41.225:3000/) *(Hosted on AWS EC2 Ubuntu Pro)*
 
-An autonomous, multi-source financial reconciliation engine and AI Finance Controller powered by **DuckDB**, **LangGraph**, **Groq LLMs (`openai/gpt-oss-120b` & `openai/gpt-oss-20b`)**, **PGVector**, **ReportLab**, and **OpenPyXL**.
+**Nexus AI Reconciler** is an autonomous, multi-source financial reconciliation engine and AI Finance Controller powered by **DuckDB**, **LangGraph**, **Groq LLMs (`openai/gpt-oss-120b` & `openai/gpt-oss-20b`)**, **PGVector**, **ReportLab**, and **OpenPyXL**.
 
 ---
 

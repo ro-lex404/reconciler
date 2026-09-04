@@ -29,7 +29,11 @@ from app.agent.router import app as agent_app
 
 VALID_PASSCODES = {"admin", "controller", "controller2026", "razorpay2026", "secret", "password"}
 
-app = FastAPI(title="Hybrid AI Analytics API")
+app = FastAPI(
+    title="Nexus AI Reconciler API",
+    description="Autonomous Multi-Source Financial Reconciliation Engine & AI Finance Controller",
+    version="2.0.0",
+)
 
 
 def _resolve_allowed_origins() -> list[str]:

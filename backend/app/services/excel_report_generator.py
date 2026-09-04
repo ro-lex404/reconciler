@@ -23,7 +23,7 @@ def generate_reconciliation_excel_report(
     """Generates a professional multi-tab Excel workbook (.xlsx) for finance controllers and auditors."""
     if openpyxl is None:
         buf = io.StringIO()
-        buf.write(f"# NEXUS RECONCILER AUDIT REPORT\n")
+        buf.write(f"# NEXUS AI RECONCILER AUDIT REPORT\n")
         buf.write(f"# Source: {source_filename}\n")
         buf.write(f"# Extracted: {extracted_count}, Matched: {matched_count}, Exceptions: {exception_count}\n\n")
         buf.write("Invoice Ref,Amount,Date,Exception Type,Severity,Recommended Action\n")
@@ -58,7 +58,7 @@ def generate_reconciliation_excel_report(
     ws_summary = wb.create_sheet(title="Executive Summary")
     ws_summary.views.sheetView[0].showGridLines = True
 
-    ws_summary["A1"] = "NEXUS RECONCILER — AUDIT & RECONCILIATION REPORT"
+    ws_summary["A1"] = "NEXUS AI RECONCILER — AUDIT & RECONCILIATION REPORT"
     ws_summary["A1"].font = title_font
     now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
     ws_summary["A2"] = f"Generated on {now_str} | Source File: {source_filename}"

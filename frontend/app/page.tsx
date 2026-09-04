@@ -528,12 +528,12 @@ export default function Home() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-sm font-black tracking-wider uppercase text-white font-mono">NEXUS RECONCILER</h1>
+              <h1 className="text-sm font-black tracking-wider uppercase text-white font-mono">NEXUS AI RECONCILER</h1>
               <span className="px-2 py-0.5 text-[9px] font-bold tracking-wider uppercase bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full">
                 Audit Control
               </span>
             </div>
-            <p className="text-[11px] text-slate-400">Autonomous Financial Reconciliation & Audit Intelligence</p>
+            <p className="text-[11px] text-slate-400">Autonomous AI Finance Controller & 3-Way Reconciliation Engine</p>
           </div>
         </div>
 
@@ -1481,10 +1481,10 @@ export default function Home() {
                   Operational Architecture & Audit Playbook
                 </div>
                 <h2 className="text-2xl font-black text-white tracking-tight">
-                  How Nexus Reconciler Operates
+                  How Nexus AI Reconciler Operates
                 </h2>
                 <p className="text-sm text-slate-300 leading-relaxed">
-                  Nexus Reconciler is an autonomous financial audit engine designed to eliminate manual spreadsheet comparisons, detect transaction anomalies, resolve lump-sum settlement batches, and guarantee complete ledger invariant integrity across multi-period banking records.
+                  Nexus AI Reconciler is an autonomous financial controller and 3-way reconciliation engine designed to eliminate manual spreadsheet comparisons, detect transaction anomalies, resolve lump-sum settlement batches, and guarantee complete ledger invariant integrity across multi-period banking records.
                 </p>
               </div>
             </div>
