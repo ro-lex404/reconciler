@@ -41,7 +41,7 @@ class PDFReconcilerState(TypedDict):
 
 # --- 3. LangGraph Nodes ---
 def extract_pdf_text_node(state: PDFReconcilerState) -> Dict[str, Any]:
-    """Extracts raw text from PDF bytes across all pages using PyPDF with Tesseract OCR fallback for scanned receipts."""
+    """Extracts raw text from PDF or image invoice bytes across all pages using PyPDF, OCR, and Vision models."""
     pdf_bytes = state.get("pdf_bytes")
     filename = state.get("filename", "").lower()
     if not pdf_bytes:
@@ -50,17 +50,47 @@ def extract_pdf_text_node(state: PDFReconcilerState) -> Dict[str, Any]:
     full_text = ""
     page_texts = []
 
-    # 1. If uploaded file is an image (e.g. restaurant receipt .png/.jpg)
+    # 1. If uploaded file is an image (e.g. photo of paper invoice / receipt .png/.jpg/.jpeg/.webp)
     if any(filename.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"]):
+        # A. Try local OCR
         try:
             from PIL import Image
             import pytesseract
             img = Image.open(io.BytesIO(pdf_bytes))
             full_text = pytesseract.image_to_string(img)
-            if full_text.strip():
+            if full_text and len(full_text.strip()) > 10:
                 return {"full_text": full_text}
-        except Exception as e:
-            print(f"Image OCR notice: {e}")
+        except Exception:
+            pass
+
+        # B. Try Multi-modal Neural Vision extraction via Groq
+        groq_api_key = os.getenv("GROQ_API_KEY", "").strip()
+        if groq_api_key:
+            try:
+                import base64
+                from groq import Groq
+                client = Groq(api_key=groq_api_key)
+                mime = "image/png" if filename.endswith(".png") else "image/jpeg"
+                b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+                resp = client.chat.completions.create(
+                    model="llama-3.2-11b-vision-preview",
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": "Extract all text from this invoice/receipt photo, including invoice reference ID, transaction date, amount, description, and status:"},
+                                {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
+                            ],
+                        }
+                    ],
+                )
+                vision_text = resp.choices[0].message.content or ""
+                if vision_text.strip():
+                    return {"full_text": vision_text}
+            except Exception as e:
+                print(f"Vision extraction notice: {e}")
+
+        return {"full_text": full_text}
 
     # 2. Extract standard PDF text
     try:

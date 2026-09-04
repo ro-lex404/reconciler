@@ -99,7 +99,7 @@ const MONTH_NAMES = [
 ];
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'reconciliation' | 'chat'>('reconciliation');
+  const [activeTab, setActiveTab] = useState<'reconciliation' | 'chat' | 'guide'>('reconciliation');
 
   // --- Hierarchical Period / Calendar State ---
   const [availableDatasets, setAvailableDatasets] = useState<DatasetInfo[]>([
@@ -347,7 +347,7 @@ export default function Home() {
   const handlePdfExtract = async () => {
     if (!pdfFile) return;
     setIsPdfLoading(true);
-    setPdfStatus('Extracting invoices & running DuckDB multi-pass reconciliation...');
+    setPdfStatus('Extracting invoice line items & running multi-pass ledger reconciliation...');
 
     const formData = new FormData();
     formData.append('file', pdfFile);
@@ -424,27 +424,20 @@ export default function Home() {
       {/* Top Enterprise Navigation Bar */}
       <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-6 py-3 flex flex-wrap items-center justify-between gap-4 shadow-xl">
         <div className="flex items-center gap-3">
-          {/* Next.js Logo Mark */}
-          <div className="w-8 h-8 rounded-lg bg-slate-950 border border-slate-700 flex items-center justify-center shadow-md">
-            <svg className="w-5 h-5 text-white" viewBox="0 0 180 180" fill="none">
-              <mask id="mask0_next" style={{ maskType: "alpha" }} maskUnits="userSpaceOnUse" x="0" y="0" width="180" height="180">
-                <circle cx="90" cy="90" r="90" fill="black"/>
-              </mask>
-              <g mask="url(#mask0_next)">
-                <circle cx="90" cy="90" r="90" fill="black" stroke="white" strokeWidth="6"/>
-                <path d="M149.508 157.52L69.142 54H54V125.97H66.1136V69.3836L139.999 164.845C143.333 162.614 146.509 160.16 149.508 157.52Z" fill="white"/>
-                <rect x="115" y="54" width="12" height="72" fill="white"/>
-              </g>
+          {/* Institutional Emblem Logo */}
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 border border-blue-400/30 flex items-center justify-center shadow-lg shadow-blue-600/20">
+            <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 2h1.5v3H12V5zm-2 0h1.5v3H10V5zm-2 0h1.5v3H8V5zm11 14H5V9h14v10zm-8-7h6v2h-6v-2zm0 3h4v2h-4v-2z" />
             </svg>
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-sm font-bold tracking-tight text-white">AI Finance Controller</h1>
-              <span className="px-2 py-0.5 text-[10px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full">
-                Multi-Source Reconciler · Track 04
+              <h1 className="text-sm font-black tracking-wider uppercase text-white font-mono">NEXUS RECONCILER</h1>
+              <span className="px-2 py-0.5 text-[9px] font-bold tracking-wider uppercase bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full">
+                Audit Control
               </span>
             </div>
-            <p className="text-[11px] text-slate-400">Autonomous Financial Reconciliation & Cash Position Engine</p>
+            <p className="text-[11px] text-slate-400">Autonomous Financial Reconciliation & Audit Intelligence</p>
           </div>
         </div>
 
@@ -452,23 +445,33 @@ export default function Home() {
         <div className="flex items-center bg-slate-800/80 p-1 rounded-xl border border-slate-700/60 shadow-inner">
           <button
             onClick={() => setActiveTab('reconciliation')}
-            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 ${
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 ${
               activeTab === 'reconciliation'
                 ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/40'
             }`}
           >
-            Reconciler Dashboard
+            Reconciliation Dashboard
           </button>
           <button
             onClick={() => setActiveTab('chat')}
-            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 ${
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 ${
               activeTab === 'chat'
                 ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/40'
             }`}
           >
-            AI Controller Chat
+            Q/A Agent
+          </button>
+          <button
+            onClick={() => setActiveTab('guide')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 ${
+              activeTab === 'guide'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/40'
+            }`}
+          >
+            User Guide
           </button>
         </div>
 
@@ -602,10 +605,10 @@ export default function Home() {
                 <div className="lg:col-span-7 xl:col-span-7 flex flex-col justify-between">
                   <div>
                     <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                      PDF Invoice Extractor & Settlement Reconciler
+                      Invoice Document Extractor & Settlement Reconciler
                     </h2>
                     <p className="text-sm text-slate-400 mt-1">
-                      Extract multi-page invoice records via Groq Llama 3.3 70B, match against active banking ledgers, and resolve Many-to-One lump-sum settlement batches in DuckDB.
+                      Extract multi-line invoice records from digital PDFs or paper photo receipts, match against active banking ledgers, and resolve Many-to-One lump-sum settlement batches.
                     </p>
                   </div>
                   
@@ -659,7 +662,7 @@ export default function Home() {
                   <div className="bg-slate-950/90 p-3 rounded-xl border border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 min-h-[58px]">
                     <input
                       type="file"
-                      accept=".pdf"
+                      accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp"
                       onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
                       className="min-w-0 flex-1 text-xs text-slate-300 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer"
                     />
@@ -701,9 +704,9 @@ export default function Home() {
             {pdfResult && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg relative overflow-hidden">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Total PDF Invoices</p>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Extracted Invoices</p>
                   <p className="text-3xl font-black text-white mt-1">{pdfResult.extracted_count}</p>
-                  <p className="text-xs text-slate-400 mt-2">Extracted via Groq Llama 3.3 70B</p>
+                  <p className="text-xs text-slate-400 mt-2">Automated Document Intelligence</p>
                 </div>
 
                 <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg relative overflow-hidden">
@@ -726,7 +729,7 @@ export default function Home() {
                     </p>
                   </div>
                   <span className="inline-block mt-3 self-start px-2 py-0.5 text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-md">
-                    DuckDB SQL Engine
+                    Relational Ledger Engine
                   </span>
                 </div>
               </div>
@@ -737,9 +740,9 @@ export default function Home() {
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    Extracted PDF Invoice Records ({pdfResult.records.length})
+                    Extracted Invoice & Receipt Records ({pdfResult.records.length})
                   </h3>
-                  <span className="text-xs text-slate-400">Schema enforced via Pydantic</span>
+                  <span className="text-xs text-slate-400">Strict Financial Schema Validation</span>
                 </div>
 
                 <div className="overflow-x-auto border border-slate-800 rounded-xl">
@@ -837,7 +840,7 @@ export default function Home() {
         )}
 
         {/* ============================================================ */}
-        {/* TAB 2: AI FINANCE CONTROLLER AGENT CHAT */}
+        {/* TAB 2: FINANCIAL Q/A AGENT CHAT */}
         {/* ============================================================ */}
         {activeTab === 'chat' && (
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100vh-130px)]">
@@ -846,10 +849,10 @@ export default function Home() {
               <div className="space-y-4">
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    Hybrid AI Agent
+                    Financial Q/A Agent
                   </h3>
                   <p className="text-xs text-slate-400 mt-1">
-                    Powered by LangGraph router, DuckDB SQL Engine, and PGVector dense semantic search.
+                    Multi-source ledger inquiry, reconciliation variance analysis, and forward cash settlement intelligence.
                   </p>
                 </div>
 
@@ -862,7 +865,7 @@ export default function Home() {
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-400 leading-relaxed">
-                    AI synthesizes live DuckDB tables, exact transaction references, and forward cash settlement projections.
+                    Synthesizes verified accounting ledgers, exact transaction references, and forward cash settlement projections.
                   </p>
                   <div className="pt-2 border-t border-slate-800/80 space-y-1 text-[10px] text-slate-400 font-mono">
                     <div className="flex items-center justify-between">
@@ -900,7 +903,7 @@ export default function Home() {
               {/* Status Info */}
               <div className="pt-3 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
                 <span>Active Period: <b className="text-blue-400 capitalize">{selectedYear} / {activeMonth}</b></span>
-                <span className="text-emerald-400 flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Live DuckDB</span>
+                <span className="text-emerald-400 flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Ledger Active</span>
               </div>
             </div>
 
@@ -911,9 +914,9 @@ export default function Home() {
                 {messages.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-3">
                     <div className="w-12 h-12 rounded-2xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shadow-inner font-mono text-sm font-bold">
-                      AI
+                      QA
                     </div>
-                    <h4 className="text-base font-bold text-white">Ask the AI Finance Controller</h4>
+                    <h4 className="text-base font-bold text-white">Ask the Financial Q/A Agent</h4>
                     <p className="text-xs text-slate-400 max-w-md">
                       Inquire about reconciliation variances, transaction references, 7-day forward cash flow forecasts, or specific invoice discrepancies.
                     </p>
@@ -926,7 +929,7 @@ export default function Home() {
                     >
                       <div className="flex items-center gap-2 px-1">
                         <span className="text-[11px] font-semibold text-slate-400">
-                          {m.role === 'user' ? 'Finance Officer' : 'AI Controller'}
+                          {m.role === 'user' ? 'Finance Officer' : 'Q/A Agent'}
                         </span>
                       </div>
 
@@ -946,11 +949,11 @@ export default function Home() {
                         ) : (
                           <div className="flex items-center gap-2 text-slate-400">
                             <span className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-ping" />
-                            Analyzing with DuckDB & Groq LLM...
+                            Analyzing ledger transactions and accounting invariants...
                           </div>
                         )}
 
-                        {/* Explainable AI Evidence Badges */}
+                        {/* Explainable Evidence Badges */}
                         {m.sources && m.sources.length > 0 && (
                           <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex flex-wrap items-center gap-1.5">
                             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">
@@ -960,9 +963,9 @@ export default function Home() {
                               <div
                                 key={sIdx}
                                 title={s.snippet || s.engine || s.name}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-900 text-blue-300 border border-slate-700/60 shadow-sm cursor-help hover:border-blue-500/50 hover:bg-slate-800 transition-colors"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-medium bg-slate-900 text-blue-300 border border-slate-700/60 shadow-sm cursor-help hover:border-blue-500/50 hover:bg-slate-800 transition-colors"
                               >
-                                <span className="font-mono text-[9px] text-slate-400">{s.type === 'document' ? '[Doc]' : '[SQL]'}</span>
+                                <span className="text-[11px]">📎</span>
                                 <span>{s.name}</span>
                                 {s.page && <span className="text-slate-400 font-mono">p.{s.page}</span>}
                               </div>
@@ -995,6 +998,236 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        {/* ============================================================ */}
+        {/* TAB 3: USER GUIDE & SYSTEM PLAYBOOK */}
+        {/* ============================================================ */}
+        {activeTab === 'guide' && (
+          <div className="space-y-8 max-w-5xl mx-auto pb-12">
+            {/* Hero Overview */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden backdrop-blur-md">
+              <div className="absolute top-0 right-0 -mt-12 -mr-12 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+              
+              <div className="max-w-3xl space-y-3">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold uppercase tracking-wider">
+                  Operational Architecture & Audit Playbook
+                </div>
+                <h2 className="text-2xl font-black text-white tracking-tight">
+                  How Nexus Reconciler Operates
+                </h2>
+                <p className="text-sm text-slate-300 leading-relaxed">
+                  Nexus Reconciler is an autonomous financial audit engine designed to eliminate manual spreadsheet comparisons, detect transaction anomalies, resolve lump-sum settlement batches, and guarantee complete ledger invariant integrity across multi-period banking records.
+                </p>
+              </div>
+            </div>
+
+            {/* 4-Step Operational Lifecycle */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+                4-Stage Reconciliation Workflow
+              </h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3">
+                  <div className="space-y-2">
+                    <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center justify-center font-mono font-bold text-xs">
+                      01
+                    </div>
+                    <h4 className="text-sm font-bold text-white">Period Ingestion</h4>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Upload bank statements (CSV/Excel) and gateway payout settlements for the target year and month via the Ingest Hub.
+                    </p>
+                  </div>
+                  <div className="text-[10px] text-blue-400 font-mono bg-blue-500/5 px-2.5 py-1.5 rounded-lg border border-blue-500/10">
+                    Hierarchical Storage Sync
+                  </div>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3">
+                  <div className="space-y-2">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center font-mono font-bold text-xs">
+                      02
+                    </div>
+                    <h4 className="text-sm font-bold text-white">Document Extraction</h4>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Provide digital PDF invoices or photo receipts of physical invoices. Document intelligence extracts invoice references, dates, and amounts.
+                    </p>
+                  </div>
+                  <div className="text-[10px] text-indigo-400 font-mono bg-indigo-500/5 px-2.5 py-1.5 rounded-lg border border-indigo-500/10">
+                    PDF & OCR Receipt Vision
+                  </div>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3">
+                  <div className="space-y-2">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center font-mono font-bold text-xs">
+                      03
+                    </div>
+                    <h4 className="text-sm font-bold text-white">Multi-Pass Matching</h4>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Cross-references line items against bank credits: Pass 1 (Exact Ref & Amount), Pass 2 (Fuzzy Date ±3 Days), Pass 3 (Many-to-One Settlement Batches).
+                    </p>
+                  </div>
+                  <div className="text-[10px] text-emerald-400 font-mono bg-emerald-500/5 px-2.5 py-1.5 rounded-lg border border-emerald-500/10">
+                    Invariant Balance Check
+                  </div>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3">
+                  <div className="space-y-2">
+                    <div className="w-8 h-8 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 flex items-center justify-center font-mono font-bold text-xs">
+                      04
+                    </div>
+                    <h4 className="text-sm font-bold text-white">Audit Q/A & Export</h4>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Query variances with the Financial Q/A Agent, project cash inflows, and download an executive PDF reconciliation compliance report.
+                    </p>
+                  </div>
+                  <div className="text-[10px] text-cyan-400 font-mono bg-cyan-500/5 px-2.5 py-1.5 rounded-lg border border-cyan-500/10">
+                    Certified PDF Report
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Financial Anomaly Classes */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-bold text-white tracking-tight">
+                  Financial Anomaly Taxonomy & Resolution Matrix
+                </h3>
+                <span className="text-xs text-slate-400">Deterministic Exception Categorization</span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs font-bold text-rose-400 px-2 py-0.5 bg-rose-500/10 border border-rose-500/20 rounded">
+                      AMOUNT_MISMATCH
+                    </span>
+                    <span className="text-[10px] uppercase font-bold text-rose-400">High Severity</span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    The transaction reference exists in the bank statement, but the deposited amount does not match the invoice figure.
+                  </p>
+                  <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-800">
+                    <b className="text-slate-300">Action:</b> Verify merchant gateway fee deductions, currency conversion spreads, or partial settlements.
+                  </p>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs font-bold text-amber-400 px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded">
+                      DATE_MISMATCH
+                    </span>
+                    <span className="text-[10px] uppercase font-bold text-amber-400">Medium Severity</span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Invoice matched by reference and amount, but settlement timestamp falls outside the standard 3-day processing window.
+                  </p>
+                  <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-800">
+                    <b className="text-slate-300">Action:</b> Check weekend clearing delays, banking holidays, or payout holdbacks.
+                  </p>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs font-bold text-rose-400 px-2 py-0.5 bg-rose-500/10 border border-rose-500/20 rounded">
+                      MISSING_BANK
+                    </span>
+                    <span className="text-[10px] uppercase font-bold text-rose-400">High Severity</span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Invoice or payment gateway entry exists, but zero corresponding credit entry appears in the banking ledger.
+                  </p>
+                  <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-800">
+                    <b className="text-slate-300">Action:</b> Initiate gateway payout tracer or flag unsettled merchant balance.
+                  </p>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs font-bold text-amber-400 px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded">
+                      MISSING_INVOICE
+                    </span>
+                    <span className="text-[10px] uppercase font-bold text-amber-400">Medium Severity</span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Credit transaction present on the bank statement with no corresponding invoice or gateway settlement record.
+                  </p>
+                  <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-800">
+                    <b className="text-slate-300">Action:</b> Confirm if direct wire transfer, vendor credit note, or interest credit.
+                  </p>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs font-bold text-rose-400 px-2 py-0.5 bg-rose-500/10 border border-rose-500/20 rounded">
+                      DUPLICATE
+                    </span>
+                    <span className="text-[10px] uppercase font-bold text-rose-400">Critical Severity</span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Duplicate payment ID, settlement reference, or invoice number recorded more than once across active ledgers.
+                  </p>
+                  <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-800">
+                    <b className="text-slate-300">Action:</b> Reverse duplicate credit entry or audit transaction idempotency.
+                  </p>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs font-bold text-rose-400 px-2 py-0.5 bg-rose-500/10 border border-rose-500/20 rounded">
+                      GHOST_CREDIT
+                    </span>
+                    <span className="text-[10px] uppercase font-bold text-rose-400">Critical Severity</span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Bank deposit recorded with an unidentifiable, corrupted, or synthetic reference string not matching gateway records.
+                  </p>
+                  <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-800">
+                    <b className="text-slate-300">Action:</b> Flag for forensic review and notify treasury operations immediately.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Invariant Balance & Ingestion Specs */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Mathematical Invariant Guarantee */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-3">
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  Mathematical Invariant Guarantee
+                </h4>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Every reconciliation execution obeys the fundamental invariant:
+                </p>
+                <div className="p-3.5 bg-slate-950 rounded-xl border border-slate-800 font-mono text-xs text-blue-300 text-center font-bold">
+                  Total Extracted Records = Matched Records + Flagged Exceptions
+                </div>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Zero line items are left unclassified or dropped. Unmatched records are systematically preserved in the exceptions registry with complete audit trails.
+                </p>
+              </div>
+
+              {/* Supported Multi-Source Formats */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-3">
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  Unified Ingestion Matrix
+                </h4>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  The engine automatically parses and normalizes diverse financial documents:
+                </p>
+                <ul className="text-xs text-slate-400 space-y-1.5 list-disc list-inside">
+                  <li><b className="text-slate-300">Bank Statements:</b> Standard CSV and Excel ledgers (`bank_statement_*.csv`).</li>
+                  <li><b className="text-slate-300">Payment Gateways:</b> Settlement breakdown reports (`razorpay_settlements_*.csv`).</li>
+                  <li><b className="text-slate-300">Digital Invoices:</b> Vectorized PDF documents (`invoices_*.pdf`).</li>
+                  <li><b className="text-slate-300">Paper Receipts:</b> Scanned photos (`.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp`).</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* ============================================================ */}
@@ -1016,7 +1249,7 @@ export default function Home() {
             </div>
 
             <p className="text-xs text-slate-400 leading-relaxed">
-              Upload bank statement CSVs, Razorpay settlement reports, or invoices for any year/month. Files are organized into hierarchical folders (`data/&lt;year&gt;/&lt;month&gt;/`) and synced immediately with DuckDB.
+              Upload bank statement CSVs, Razorpay settlement reports, or invoices for any year/month. Files are organized into hierarchical folders (`data/&lt;year&gt;/&lt;month&gt;/`) and synced immediately with the relational ledger engine.
             </p>
 
             <form onSubmit={handleIngestDataset} className="space-y-3.5 text-xs">
@@ -1134,7 +1367,7 @@ export default function Home() {
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed">
-              You are about to purge dataset files for <b className="text-white capitalize">{selectedYear} / {activeMonth}</b>. This will permanently remove statement files from disk and refresh DuckDB tables.
+              You are about to purge dataset files for <b className="text-white capitalize">{selectedYear} / {activeMonth}</b>. This will permanently remove statement files from disk and refresh ledger state.
             </p>
 
             <form onSubmit={handleDeleteDataset} className="space-y-3.5 text-xs">

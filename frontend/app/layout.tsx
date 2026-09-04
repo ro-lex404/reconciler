@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Razorpay Reconciler | AI Finance Controller",
-  description: "Autonomous Multi-Source Financial Reconciliation Engine powered by DuckDB, LangGraph & Groq",
+  title: "Nexus Reconciler | Autonomous Financial Audit & Reconciliation Engine",
+  description: "Institutional Multi-Source Financial Reconciliation Engine and Autonomous Audit Intelligence.",
   icons: {
-    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233b82f6'><path d='M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5'/></svg>",
+    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233b82f6'><path d='M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z'/></svg>",
   },
 };
 
