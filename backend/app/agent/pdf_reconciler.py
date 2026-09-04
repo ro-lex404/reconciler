@@ -446,8 +446,18 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
     mto_invoices_count = len(mto_df) * 2
     total_invoices_matched = single_count + mto_invoices_count
 
-    matches = matches_df.to_dict(orient="records")
-    exceptions = exceptions_df.to_dict(orient="records")
+    raw_matches = matches_df.to_dict(orient="records")
+    raw_exceptions = exceptions_df.to_dict(orient="records")
+
+    import math
+    matches = [
+        {k: (None if (isinstance(v, float) and (math.isnan(v) or math.isinf(v))) else v) for k, v in r.items()}
+        for r in raw_matches
+    ]
+    exceptions = [
+        {k: (None if (isinstance(v, float) and (math.isnan(v) or math.isinf(v))) else v) for k, v in r.items()}
+        for r in raw_exceptions
+    ]
 
     results = {
         "reconciliation_results": {

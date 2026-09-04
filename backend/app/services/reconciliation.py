@@ -571,7 +571,18 @@ def reconcile_settlements(
         SELECT * FROM many_to_one_matches
     """).df()
 
-    exceptions_df = con.execute("SELECT * FROM exceptions").df()
+    raw_matches = matches_df.to_dict(orient="records")
+    raw_exceptions = exceptions_df.to_dict(orient="records")
+
+    import math
+    matches = [
+        {k: (None if (isinstance(v, float) and (math.isnan(v) or math.isinf(v))) else v) for k, v in r.items()}
+        for r in raw_matches
+    ]
+    exceptions = [
+        {k: (None if (isinstance(v, float) and (math.isnan(v) or math.isinf(v))) else v) for k, v in r.items()}
+        for r in raw_exceptions
+    ]
 
     total_transactions = con.execute("SELECT COUNT(*) FROM razorpay").fetchone()[0]
     bank_entries = con.execute("SELECT COUNT(*) FROM bank").fetchone()[0]
@@ -584,14 +595,14 @@ def reconcile_settlements(
         "bank_entries": bank_entries,
         "matched_transactions": matched_count,
         "match_rate": match_rate,
-        "exception_count": len(exceptions_df),
-        "exceptions": exceptions_df.to_dict(orient="records"),
+        "exception_count": len(exceptions),
+        "exceptions": exceptions,
         "throughput": {
             "razorpay_records_processed": total_transactions,
             "bank_records_processed": bank_entries,
             "engine": "DuckDB SQL Vectorized Engine",
         },
-        "matches": matches_df.to_dict(orient="records"),
+        "matches": matches,
     }
 
 

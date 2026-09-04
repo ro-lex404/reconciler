@@ -8,10 +8,10 @@ function getApiBaseUrl(): string {
   if (process.env.NEXT_PUBLIC_API_URL) {
     return process.env.NEXT_PUBLIC_API_URL.replace(/\/+$/, '');
   }
-  // In the browser, use relative path to route through Next.js proxy rewrites
-  // This bypasses any AWS EC2 Port 8000 Security Group firewall restrictions and CORS!
   if (typeof window !== 'undefined') {
-    return '';
+    const protocol = window.location.protocol;
+    const hostname = window.location.hostname;
+    return `${protocol}//${hostname}:8000`;
   }
   return 'http://127.0.0.1:8000';
 }
