@@ -5,12 +5,15 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 function getApiBaseUrl(): string {
-  if (typeof window !== 'undefined') {
-    const protocol = window.location.protocol;
-    const hostname = window.location.hostname;
-    return `${protocol}//${hostname}:8000`;
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL.replace(/\/+$/, '');
   }
-  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  // In the browser, use relative path to route through Next.js proxy rewrites
+  // This bypasses any AWS EC2 Port 8000 Security Group firewall restrictions and CORS!
+  if (typeof window !== 'undefined') {
+    return '';
+  }
+  return 'http://127.0.0.1:8000';
 }
 
 function formatMessageForMarkdown(content: string): string {

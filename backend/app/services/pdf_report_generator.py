@@ -5,36 +5,53 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List
 
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    HAS_REPORTLAB = True
+except ImportError:
+    HAS_REPORTLAB = False
+    colors = None
+    letter = None
+    ParagraphStyle = None
+    getSampleStyleSheet = None
+    pdfmetrics = None
+    TTFont = None
+    HRFlowable = None
+    Paragraph = None
+    SimpleDocTemplate = None
+    Spacer = None
+    Table = None
+    TableStyle = None
 
 # Register Unicode TTF fonts to support Indian Rupee symbol (₹) cleanly in ReportLab
 UNICODE_FONT = "Helvetica"
 UNICODE_FONT_BOLD = "Helvetica-Bold"
 
-for font_family, reg_path, bold_path in [
-    ("SegoeUI", "C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/segoeuib.ttf"),
-    ("Arial", "C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/arialbd.ttf"),
-    ("DejaVuSans", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
-]:
-    if os.path.exists(reg_path):
-        try:
-            pdfmetrics.registerFont(TTFont(font_family, reg_path))
-            if os.path.exists(bold_path):
-                pdfmetrics.registerFont(TTFont(f"{font_family}-Bold", bold_path))
-                pdfmetrics.registerFontFamily(font_family, normal=font_family, bold=f"{font_family}-Bold")
-                UNICODE_FONT_BOLD = f"{font_family}-Bold"
-            else:
-                pdfmetrics.registerFontFamily(font_family, normal=font_family, bold=font_family)
-                UNICODE_FONT_BOLD = font_family
-            UNICODE_FONT = font_family
-            break
-        except Exception:
-            pass
+if HAS_REPORTLAB:
+    for font_family, reg_path, bold_path in [
+        ("SegoeUI", "C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/segoeuib.ttf"),
+        ("Arial", "C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/arialbd.ttf"),
+        ("DejaVuSans", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+    ]:
+        if os.path.exists(reg_path):
+            try:
+                pdfmetrics.registerFont(TTFont(font_family, reg_path))
+                if os.path.exists(bold_path):
+                    pdfmetrics.registerFont(TTFont(f"{font_family}-Bold", bold_path))
+                    pdfmetrics.registerFontFamily(font_family, normal=font_family, bold=f"{font_family}-Bold")
+                    UNICODE_FONT_BOLD = f"{font_family}-Bold"
+                else:
+                    pdfmetrics.registerFontFamily(font_family, normal=font_family, bold=font_family)
+                    UNICODE_FONT_BOLD = font_family
+                UNICODE_FONT = font_family
+                break
+            except Exception:
+                pass
 
 EXCEPTION_TYPE_LABELS = {
     # Standard 6 classes
@@ -87,6 +104,15 @@ def generate_reconciliation_pdf_report(
     engine_name: str = "DuckDB SQL Vectorized Engine",
 ) -> bytes:
     """Generates a professional PDF audit report of faulty transactions using ReportLab."""
+    if not HAS_REPORTLAB:
+        buf = io.StringIO()
+        buf.write(f"NEXUS RECONCILER AUDIT REPORT\n")
+        buf.write(f"Source: {source_filename}\n")
+        buf.write(f"Extracted: {extracted_count}, Matched: {matched_count}, Exceptions: {exception_count}\n\n")
+        for exc in exceptions:
+            buf.write(f"- {exc.get('invoice_ref') or exc.get('merchant_ref')}: ₹{exc.get('invoice_amount') or exc.get('amount')} | {exc.get('exception_type') or exc.get('type')} | {exc.get('recommended_action')}\n")
+        return buf.getvalue().encode("utf-8")
+
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,

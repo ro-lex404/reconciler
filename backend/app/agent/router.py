@@ -8,7 +8,10 @@ try:
     from langchain_huggingface import HuggingFaceEmbeddings
 except ModuleNotFoundError:
     from langchain_community.embeddings import FakeEmbeddings as HuggingFaceEmbeddings
-from langchain_community.vectorstores import PGVector
+try:
+    from langchain_community.vectorstores import PGVector
+except Exception:
+    PGVector = None
 from app.services.duckdb_client import execute_text_to_sql
 import os
 import glob
