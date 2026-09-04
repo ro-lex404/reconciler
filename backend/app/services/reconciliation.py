@@ -571,6 +571,8 @@ def reconcile_settlements(
         SELECT * FROM many_to_one_matches
     """).df()
 
+    exceptions_df = con.execute("SELECT * FROM exceptions").df()
+
     raw_matches = matches_df.to_dict(orient="records")
     raw_exceptions = exceptions_df.to_dict(orient="records")
 
