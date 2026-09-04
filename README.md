@@ -4,46 +4,67 @@
 > *Razorpay Buildathon 2026*  
 > 🌐 **Live Cloud Deployment**: [http://44.203.41.225:3000/](http://44.203.41.225:3000/) *(Hosted on AWS EC2 Ubuntu Pro)*
 
-An autonomous, multi-source financial reconciliation engine and AI Finance Controller powered by **DuckDB**, **LangGraph**, **Groq LLMs**, **PGVector**, and **ReportLab**.
+An autonomous, multi-source financial reconciliation engine and AI Finance Controller powered by **DuckDB**, **LangGraph**, **Groq LLMs (`openai/gpt-oss-120b` & `openai/gpt-oss-20b`)**, **PGVector**, **ReportLab**, and **OpenPyXL**.
 
 ---
 
-## Key Features
+## ⚡ Core LLM Architecture (Groq LPU Inference)
+
+Our system replaces legacy monolithic prompts with a tiered, multi-agent AI pipeline hosted on **Groq LPU high-throughput inference**:
+
+| Agent / Subsystem | Model | Purpose & Execution SLA |
+|---|---|---|
+| **Intent Classifier & Router** | `openai/gpt-oss-20b` | Sub-50ms query classification routing requests to DuckDB SQL, Semantic RAG, or Cash Forecasting pipelines. |
+| **Deterministic Text-to-SQL Engine** | `openai/gpt-oss-120b` | Zero-hallucination translation of complex financial natural language inquiries into vectorized DuckDB SQL queries. |
+| **Multi-Modal Invoice Extractor** | `openai/gpt-oss-120b` | Structured Pydantic schema validation parsing raw multi-page OCR text into validated `InvoiceRecord` entities. |
+| **Executive Audit Synthesizer** | `openai/gpt-oss-120b` | Generates auditable executive summaries with transparent SQL citations, ledger metrics, and balance invariant proofs. |
+| **Vision OCR Fallback** | `llama-3.2-11b-vision-preview` | Multi-modal neural vision fallback for low-density photographed receipts and mobile invoice snapshots. |
+
+---
+
+## 🚀 Key Platform Features
 
 ### 1. Vectorized Multi-Pass DuckDB Reconciliation Engine
-* **Pass 1 — Exact Matching**: Instant matching on transaction reference ID and exact monetary amount ($\Delta < ₹0.01$).
-* **Pass 2 — Fuzzy Matching**: Tolerant matching for gateway fee rounding ($\Delta \le ₹5.00$) and T+1/T+2 bank clearance date shifts with dynamic confidence scoring (65%–85%).
-* **Pass 3 — Actionable Exception Categorization (6 Standard Classes)**:
-  * `AMOUNT_MISMATCH`: Variance flagged for gateway processing fee deduction or GST discrepancy.
-  * `DATE_MISMATCH`: Settlement date clearing variance beyond T+2 bank clearance tolerance.
-  * `MISSING_BANK`: Gateway settlement record with no corresponding bank ledger credit.
-  * `MISSING_INVOICE`: Bank credit entry referencing valid merchant tag without ledger record.
-  * `DUPLICATE`: Multiple ledger entries referencing identical merchant identifiers.
-  * `GHOST_CREDIT`: Unreferenced bank credit with no corresponding gateway entry.
-* **Multi-Format Date Normalization**: Automatically handles `DD-MM-YYYY`, `DD/MM/YYYY`, and `YYYY-MM-DD` timestamps without casting failures.
+* **Pass 1 — Exact Matching**: Sub-millisecond vectorized pairing on transaction reference ID and exact monetary value ($\Delta < ₹0.01$).
+* **Pass 2 — Tolerant & Fuzzy Matching**: Models real-world gateway processing fee deductions (2.0% MDR + 18% GST) and $T+1 / T+2$ bank clearance date shifts with dynamic confidence scoring (65%–85%).
+* **Pass 3 — Actionable Exception Taxonomy (6 Standard Classes)**:
+  * `AMOUNT_MISMATCH`: Net variance flagged due to irregular gateway MDR fee deductions or GST rate discrepancies.
+  * `DATE_MISMATCH`: Settlement date clearing variance extending beyond the allowable $T+2$ bank clearance window.
+  * `MISSING_BANK`: Gateway payout record logged with no corresponding corporate bank ledger credit.
+  * `MISSING_GATEWAY`: Bank deposit found referencing a merchant tag without an originating Razorpay payout batch.
+  * `FEE_MISMATCH`: Gateway fee charged diverges from negotiated contract schedule.
+  * `STATUS_MISMATCH`: Invoice marked PAID in ERP but gateway settlement flagged failed or refunded.
+* **Mathematical Invariant Guarantee**:
+  $$\text{Total Ingested Volume} \equiv \text{Matched Records} + \text{Flagged Exceptions}$$
 
-### 2. Explainable AI (XAI) Source Attribution & Citations
-* Every response from the AI Finance Controller cites the exact evidence used:
-  * **Document Badges**: Direct page-level citations (e.g., `invoices_august_2026.pdf (p. 1)`) with text snippets from PGVector.
-  * **SQL Badges**: Cites active tabular datasets (e.g., `razorpay_settlements_august_2026.csv`, `bank_statement_august_2026.csv`).
-* Zero hallucination proof for audit trails and compliance reviews.
+### 2. 3-Way Cross-Ledger Triangulation Inspector
+* **Visual Ledger Alignment**: Decomposes transactions across:
+  1. **Source Invoice** (Reference ID, Document Date, Billed Status, Gross Invoice Total)
+  2. **Razorpay Gateway Report** (Payout Batch, 2% MDR Fee Deduction, 18% GST Split, Net Expected)
+  3. **Bank Statement** (Value Date, UTR / Clearing Narration, Bank Deposited Amount)
+* **Audit Variance Decomposition**: Real-time delta decomposition ($\Delta$) with automated root-cause detection and actionable next steps.
 
-### 3. Stateful LangGraph PDF Extractor & Reconciler
-* Ingests multi-page invoice PDFs (`pypdf` + Groq LLM with structured Pydantic extraction).
-* Dynamically reconciles extracted PDF invoice lines against bank settlements in DuckDB.
-* Live memory injection synchronizes extracted invoice data directly into the agent's reasoning memory.
+### 3. Treasury Resolution & Action Center
+* **One-Click Auto Write-off**: Automatically journal minor fee rounding variances ($\le ₹5.00$) straight to **GL 6100 — Payment Gateway Fee Expense**.
+* **One-Click Razorpay Support Ticket Generator**: Pre-populates formatted Markdown support tickets with transaction UTRs, payout batch IDs, and monetary deltas, copied instantly to the controller's clipboard.
+* **Treasury Assignment**: Direct re-queuing and assignment of delayed settlements to Treasury Specialists.
 
-### 4. 7-Day Forward Cash Settlement Forecasting
-* Automatically computes gross matched transaction volumes, gateway processing fees (2.0%), and applicable GST (18%).
-* Projects upcoming net settlement inflows for next-week cash flow planning.
+### 4. Explainable AI (XAI) with Transparent SQL Citations
+* Deterministic financial answers backed by live data:
+  * **Interactive SQL Citations**: Clickable badges revealing the exact DuckDB SQL query executed against the columnar tables.
+  * **Document Citations**: Page-level references (e.g., `invoices_august_2026.pdf (p. 1)`) with text snippets retrieved from PGVector.
 
-### 5. Official PDF Audit Report Generator
-* One-click generation of executive reconciliation audit reports via **ReportLab**.
-* Features TrueType Unicode Indian Rupee (`₹`) vector rendering, live generation timestamps, KPI summary metrics, and categorized exception tables.
+### 5. Multi-Tab Financial Excel & PDF Audit Dossier
+* **Multi-Tab Excel Export (`.xlsx`)**: Generated via `openpyxl` with 4 dedicated sheets:
+  - *Summary KPIs* (Processed volume, fee deductions, reconciliation health score)
+  - *Matched Records* (Full cross-ledger clearing trail)
+  - *Actionable Exceptions* (Classified anomalies with reason codes)
+  - *Treasury Adjustments* (GL 6100 write-offs and ledger journal entries)
+* **Official PDF Audit Dossier**: Generated via `ReportLab` featuring TrueType Unicode Indian Rupee (`₹`) rendering, statutory confidence intervals, and CFO ledger sign-off signposts.
 
 ---
 
-## Architecture & System Design
+## 🏛️ System Architecture & Data Flow
 
 ### 1. End-to-End System Topology
 
@@ -52,66 +73,57 @@ flowchart TB
     subgraph ClientLayer["🖥️ Frontend & Client Layer (Next.js 16 / React 19 / Tailwind)"]
         UI_Dash["📊 Reconciliation Dashboard<br/><i>KPIs, Multi-Tab Tables, Live Search & Filters</i>"]
         UI_Inspector["🔍 3-Way Triangulation Inspector<br/><i>Invoice ↔ Gateway ↔ Bank Delta Decomposition</i>"]
-        UI_QA["💬 Financial Q/A Agent<br/><i>Natural Language Chat + Paperclip Citations 📎</i>"]
-        UI_Period["📅 Hierarchical Period Selector<br/><i>Multi-Year / Monthly Calendar Isolation</i>"]
-        UI_Guide["📖 Interactive User Guide<br/><i>4-Stage Lifecycle & 6 Anomaly Class Matrix</i>"]
+        UI_QA["💬 AI Controller Copilot<br/><i>Natural Language Chat + DuckDB SQL Citations 📎</i>"]
+        UI_Treasury["💼 Treasury Action Center<br/><i>GL 6100 Auto Write-off & Clipboard Support Tickets</i>"]
+        UI_Period["📅 Period Selector<br/><i>August 2026, September 2026, October 2026</i>"]
     end
 
     subgraph APILayer["⚡ API Gateway & Controller Layer (FastAPI / Uvicorn)"]
-        API_Auth["🔐 Passcode Controller Auth"]
-        API_Endpoints["🌐 REST Endpoints<br/><i>/finance/extract-pdf<br/>/finance/chat<br/>/finance/export-excel<br/>/finance/export-report</i>"]
-        API_Async["⚡ Async Celery Task Dispatcher"]
+        API_Endpoints["🌐 REST Endpoints<br/><i>/finance/extract-pdf<br/>/chat<br/>/finance/export-excel<br/>/finance/export-report</i>"]
     end
 
     subgraph MultiModal["📄 Multi-Modal Document Intelligence Pipeline"]
         direction TB
-        Input_Doc["📥 Input Documents<br/><i>Digital Vector PDFs (.pdf) OR Scanned / Photo Receipts (.png, .jpg, .webp)</i>"]
-        PyPDF_Node["📑 PyPDF Vector Parser"]
-        OCR_Node["👁️ Tesseract Local OCR"]
-        Vision_Node["🧠 Groq Vision Multi-Modal LLM<br/><i>(llama-3.2-11b-vision-preview)</i>"]
-        Pydantic_Node["📐 Structured Pydantic Schema Validator<br/><i>(InvoiceRecord / ExtractedInvoiceList)</i>"]
+        Input_Doc["📥 Input Invoices / Receipts<br/><i>Digital Vector PDFs (.pdf) OR Photos (.png, .jpg)</i>"]
+        PyPDF_Node["📑 PyPDF Text Extractor"]
+        Vision_Node["🧠 Multi-Modal Neural Vision<br/><i>(llama-3.2-11b-vision-preview)</i>"]
+        Pydantic_Node["📐 Structured Pydantic Schema Validator<br/><i>(Groq openai/gpt-oss-120b)</i>"]
         
         Input_Doc --> PyPDF_Node
-        PyPDF_Node -- "Low Text Density" --> OCR_Node
-        OCR_Node -- "Fallback / Phone Photos" --> Vision_Node
-        PyPDF_Node & OCR_Node & Vision_Node --> Pydantic_Node
+        PyPDF_Node -- "Fallback / Image Receipts" --> Vision_Node
+        PyPDF_Node & Vision_Node --> Pydantic_Node
     end
 
-    subgraph AgenticOrchestration["🤖 LangGraph Autonomous Agentic Orchestrator"]
-        Router["🧭 Intent Classifier & Router<br/><i>(Llama 3.3 70B / 20B)</i>"]
-        TextToSQL["⚙️ Deterministic Text-to-SQL Generator"]
-        DenseRAG["📚 Dense Semantic RAG Retriever"]
-        CashForecaster["📈 7-Day Forward Cash Forecaster<br/><i>(Gross - 2.0% MDR - 18% GST)</i>"]
-        Synthesizer["✍️ Executive Audit Synthesizer<br/><i>Zero-Hallucination + Source Attribution 📎</i>"]
+    subgraph AgenticOrchestration["🤖 LangGraph Autonomous Agentic Controller"]
+        Router["🧭 Intent Classifier & Router<br/><i>(Groq openai/gpt-oss-20b)</i>"]
+        TextToSQL["⚙️ Vectorized Text-to-SQL Engine<br/><i>(Groq openai/gpt-oss-120b)</i>"]
+        DenseRAG["📚 Dense Semantic RAG Retriever<br/><i>(PGVector + SentenceTransformers)</i>"]
+        Synthesizer["✍️ Executive Audit Synthesizer<br/><i>(Groq openai/gpt-oss-120b + Citations 📎)</i>"]
         
         Router -->|"Relational Inquiry"| TextToSQL
         Router -->|"Policy / Anomaly Inquiry"| DenseRAG
-        Router -->|"Liquidity / Payout Inquiry"| CashForecaster
-        TextToSQL & DenseRAG & CashForecaster --> Synthesizer
+        TextToSQL & DenseRAG --> Synthesizer
     end
 
     subgraph RelationalEngine["⚡ Vectorized Relational Ledger Engine (DuckDB OLAP)"]
         direction TB
         Pass1["Pass 1: Exact Matching<br/><i>Ref ID & Amount (Δ < ₹0.01, 100% Confidence)</i>"]
-        Pass2["Pass 2: Fuzzy Clearing Shift<br/><i>Date ±3 Days Tolerance, Fee Delta ≤ ₹5.00 (65%-85%)</i>"]
-        Pass3["Pass 3: Many-to-One Settlement Bundling<br/><i>Combinatorial Multi-Invoice to Single Bank Deposit</i>"]
-        
-        AnomalyFilter["🚨 Deterministic 6-Class Anomaly Engine<br/><i>• AMOUNT_MISMATCH  • DATE_MISMATCH<br/>• MISSING_BANK     • MISSING_INVOICE<br/>• DUPLICATE        • GHOST_CREDIT</i>"]
+        Pass2["Pass 2: Fuzzy Clearance & MDR Fee<br/><i>2% Fee + 18% GST, Date ±2 Days (65%-85%)</i>"]
+        Pass3["Pass 3: 6-Class Anomaly Classification<br/><i>AMOUNT_MISMATCH, DATE_MISMATCH, MISSING_BANK, etc.</i>"]
         
         Invariant["⚖️ Mathematical Invariant Balance Guarantee<br/><b>Total Extracted ≡ Matched Records + Flagged Exceptions</b>"]
         
-        Pass1 --> Pass2 --> Pass3 --> AnomalyFilter --> Invariant
+        Pass1 --> Pass2 --> Pass3 --> Invariant
     end
 
-    subgraph StorageLayer["💾 Storage & Vector Embeddings Layer"]
-        H_Store["📁 Hierarchical Statement Store<br/><i>data/&lt;year&gt;/&lt;month&gt;/ (Bank CSVs, Gateway CSVs)</i>"]
+    subgraph StorageLayer["💾 Storage & Vector Layer"]
+        H_Store["📁 Hierarchical Ledger Store<br/><i>data/2026/&lt;month&gt;/ (Bank CSVs, Gateway CSVs)</i>"]
         PG_Vector["🐘 PostgreSQL 16 + PGVector<br/><i>384-dim Dense Embeddings + Chunk Metadata</i>"]
-        Redis_Queue["⚡ Redis Message Broker + Celery Worker"]
     end
 
     subgraph ComplianceExport["📑 Compliance & Export Engine"]
-        PDF_Gen["📄 ReportLab PDF Audit Generator<br/><i>Unicode ₹ Rendering, Timestamped Executive Report</i>"]
-        Excel_Gen["📊 OpenPyXL Multi-Tab Excel Generator<br/><i>Executive Summary, Matched Items, Exceptions (.xlsx)</i>"]
+        PDF_Gen["📄 ReportLab PDF Audit Dossier<br/><i>Unicode ₹ Rendering, Timestamped Sign-off</i>"]
+        Excel_Gen["📊 OpenPyXL Multi-Tab Excel (.xlsx)<br/><i>Executive Summary, Matched Items, Exceptions, GL 6100</i>"]
     end
 
     %% Wiring connections
@@ -124,14 +136,13 @@ flowchart TB
     AgenticOrchestration <--> StorageLayer
     RelationalEngine <--> H_Store
     APILayer --> StorageLayer
-    StorageLayer <--> Redis_Queue
     APILayer --> ComplianceExport
-    ComplianceExport -.->|"Downloadable Files"| ClientLayer
+    ComplianceExport -.->|"Downloadable Reports"| ClientLayer
 ```
 
 ---
 
-### 2. 3-Way Cross-Ledger Triangulation & Settlement Flow
+### 2. 3-Way Cross-Ledger Triangulation Sequence
 
 ```mermaid
 sequenceDiagram
@@ -140,60 +151,62 @@ sequenceDiagram
     participant Invoice as 🧾 Source Invoice (PDF / Photo)
     participant Gateway as 💳 Razorpay Payment Gateway
     participant Bank as 🏦 Company Bank Ledger (CSV)
-    participant Reconciler as ⚡ Nexus Triangulation Engine
+    participant Reconciler as ⚡ DuckDB Triangulation Engine
     actor Controller as 🧑‍💼 Finance Controller
 
-    Customer->>Invoice: Purchase Goods (Gross Invoiced = ₹2,500.00 [REF1004])
+    Customer->>Invoice: Purchase Goods (Gross Invoiced = ₹34,043.26 [REF2046])
     Customer->>Gateway: Online Payment via Razorpay Checkout
-    Gateway->>Gateway: Deduct 2.0% MDR Fee (-₹50.00) & 18% GST (-₹9.00)
-    Gateway->>Bank: Net Lump-Sum Settlement Deposit (₹2,441.00)
+    Gateway->>Gateway: Deduct 2.0% MDR Fee (-₹680.87) & 18% GST on Fee (-₹122.56)
+    Gateway->>Bank: Net Payout Batch Deposit (₹33,239.84)
     
     Note over Reconciler: Ingestion & 3-Way Triangulation Pass
-    Invoice->>Reconciler: Extracted Gross Bill: ₹2,500.00
-    Gateway->>Reconciler: Settlement Payout Record: Net ₹2,441.00 (Fee = ₹59.00)
-    Bank->>Reconciler: Actual Credit Entry: ₹2,441.00 (UTR: CMS/RPAY/REF1004)
+    Invoice->>Reconciler: Extracted Gross Bill: ₹34,043.26
+    Gateway->>Reconciler: Settlement Payout: Net ₹33,239.84 (Fee Total = ₹803.43)
+    Bank->>Reconciler: Realized Deposit: ₹33,239.84 (UTR: CMS/RPAY/REF2046)
     
-    Reconciler->>Reconciler: Compute Variance Delta:<br/>Gross (₹2,500.00) - Deductions (₹59.00) - Bank (₹2,441.00) = Δ ₹0.00
+    Reconciler->>Reconciler: Compute Ledger Delta:<br/>Gross (₹34,043.26) - Fee Deductions (₹803.43) - Bank (₹33,239.84) = Δ ₹0.00
     
-    alt Exact Reconciliation / Fee Proven
-        Reconciler-->>Controller: Flag as AMOUNT_MISMATCH (Explained by Gateway MDR)
-        Controller->>Reconciler: Click [✓ Accept Fee Variance] → Auto-book to GL 6100
+    alt Exact Match or Fee Explained
+        Reconciler-->>Controller: Flag as Reconciled (MDR Fee Reconciled)
+        Controller->>Reconciler: Click [Auto Write-off] → Auto-book to GL 6100 Gateway Expense
     else Missing Deposit in Bank
-        Reconciler-->>Controller: Flag as MISSING_BANK (High Severity)
+        Reconciler-->>Controller: Flag as MISSING_BANK (Action Required)
         Controller->>Reconciler: Click [📋 Copy Support Ticket] → Dispatch Razorpay Tracer
     end
 ```
 
 ---
 
-## Repository Structure
+## 📂 Repository Structure
 
 ```
 razorpay-reconciler/
 ├── backend/
 │   ├── app/
 │   │   ├── agent/
-│   │   │   ├── router.py               # LangGraph Router, SQL Node, RAG Node & Synthesizer
-│   │   │   └── pdf_reconciler.py       # LangGraph PDF Extraction & Reconciliation Workflow
+│   │   │   ├── router.py               # LangGraph Controller (gpt-oss-20b Router + gpt-oss-120b SQL/Synthesizer)
+│   │   │   └── pdf_reconciler.py       # Multi-Modal Invoice Extraction (gpt-oss-120b Pydantic + Vision)
 │   │   ├── services/
-│   │   │   ├── reconciliation.py       # Vectorized DuckDB Multi-Pass Matching Engine
-│   │   │   └── pdf_report_generator.py # ReportLab PDF Audit Report Generator
-│   │   ├── worker.py                   # Celery Worker for Background Vector Ingestion
-│   │   └── main.py                     # FastAPI REST API Endpoints
-│   ├── generate_monthly_data.py        # Automated Dataset Generator for any Month/Year
+│   │   │   ├── reconciliation.py       # Vectorized DuckDB Multi-Pass Triangulation Engine
+│   │   │   └── pdf_report_generator.py # ReportLab PDF Audit Dossier Generator
+│   │   ├── worker.py                   # Celery Background Ingestion Worker
+│   │   └── main.py                     # FastAPI Endpoints & CORS Management
+│   ├── generate_monthly_data.py        # Realistic Financial Dataset Generator (July, Aug, Sept, Oct 2026)
 │   ├── Dockerfile                      # Backend Container Definition
 │   └── requirements.txt                # Python Dependencies
 │
 ├── frontend/
 │   ├── app/
-│   │   ├── page.tsx                    # Dual-Tab Dashboard (Reconciler + AI Agent Chat)
+│   │   ├── page.tsx                    # Dual-Tab Dashboard (Reconciler + Copilot Chat + 3-Way Inspector)
 │   │   └── layout.tsx                  # Root Next.js Layout
 │   ├── Dockerfile                      # Frontend Container Definition
 │   └── package.json                    # Node Dependencies
 │
 ├── data/
 │   ├── 2026/july/                      # July 2026 Dataset (PDFs, Razorpay CSVs, Bank CSVs)
-│   └── 2026/august/                    # August 2026 Dataset (PDFs, Razorpay CSVs, Bank CSVs)
+│   ├── 2026/august/                    # August 2026 Dataset (PDFs, Razorpay CSVs, Bank CSVs)
+│   ├── 2026/september/                 # September 2026 Dataset
+│   └── 2026/october/                   # October 2026 Dataset
 │
 ├── .github/workflows/
 │   └── ci.yml                          # GitHub Actions CI Pipeline (Python Tests + Next.js Build)
@@ -204,10 +217,10 @@ razorpay-reconciler/
 
 ---
 
-## Quickstart Guide
+## 🛠️ Quickstart Guide
 
 ### Prerequisites
-* [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Docker Compose v2+)
+* [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Docker Compose v2+) OR Python 3.11+ & Node 18+
 * [Groq API Key](https://console.groq.com/keys)
 
 ### 1. Clone & Configure Environment
@@ -216,7 +229,8 @@ git clone https://github.com/ro-lex404/reconciler.git
 cd reconciler
 cp .env.example .env
 ```
-Edit `.env` and add your Groq API key:
+
+Edit `.env` and set your Groq API key:
 ```env
 GROQ_API_KEY=gsk_your_groq_api_key_here
 ```
@@ -226,37 +240,36 @@ GROQ_API_KEY=gsk_your_groq_api_key_here
 docker compose up --build
 ```
 
-### 3. Open the Application
-* **Frontend Web Dashboard**: `http://localhost:3000`
-* **Interactive Swagger API Docs**: `http://localhost:8000/docs`
+### 3. Access the Live Dashboard
+* **Frontend Web Application**: [http://localhost:3000](http://localhost:3000) (or live on AWS: [http://44.203.41.225:3000](http://44.203.41.225:3000))
+* **FastAPI Interactive Swagger Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 ---
 
-## Testing & Verification
+## 🧪 Testing & Verification
 
-### Running Tests Locally
 ```bash
-# Backend Test & Reconciliation Verification
-$env:PYTHONPATH="backend"
-python -m unittest discover -s backend/tests -p "test_*.py" -v
+# Backend Test Suite & Invariant Balance Verification
+cd backend
+python -m unittest discover -s tests -p "test_*.py" -v
 
-# Frontend Build & Typecheck
-cd frontend
+# Frontend Production Build Check
+cd ../frontend
 npm run build
 ```
 
 ---
 
-## Suggested Prompt Inquiries
+## 💬 Suggested AI Controller Inquiries
 
-In the **AI Controller Chat** tab, test queries such as:
-1. `"What's the total unreconciled amount?"`
-2. `"Why was REF1004 flagged?"`
-3. `"Show me all exceptions above ₹1,000"`
-4. `"What is the projected settlement inflow next week?"`
-5. `"Why was REF2004 flagged in August?"`
+In the **AI Finance Controller Assistant** chat interface, test the following:
+1. `"What is our net settlement variance for August 2026?"`
+2. `"Show all exceptions where bank deposit is missing above ₹10,000"`
+3. `"Why was reference REF2046 flagged and what is the gateway fee breakdown?"`
+4. `"What is our projected cash settlement inflow for next week?"`
+5. `"Summarize all fee overcharges and generate GL 6100 journal adjustment totals."`
 
 ---
 
-## License
-MIT License. Built for the Razorpay Buildathon 2026 (Track 04: AI Finance Controller).
+## 📄 License
+MIT License. Developed for the **Razorpay Buildathon 2026 (Track 04: AI Finance Controller — Run the books and the cash position)**.

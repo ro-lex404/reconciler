@@ -177,7 +177,7 @@ def _robust_parse_invoice_text(text: str) -> List[Dict[str, Any]]:
 
 
 def llm_extraction_node(state: PDFReconcilerState) -> Dict[str, Any]:
-    """Uses Groq Llama 3.3 70B with structured output to parse invoice records, with fallback parser."""
+    """Uses Groq openai/gpt-oss-120b with structured output to parse invoice records, with fallback parser."""
     full_text = state.get("full_text", "")
     if not full_text.strip():
         return {"extracted_records": []}
