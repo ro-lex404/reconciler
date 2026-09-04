@@ -422,7 +422,7 @@ def duckdb_reconcile_node(state: PDFReconcilerState) -> Dict[str, Any]:
             p.amount as invoice_amount,
             p.invoice_date as invoice_date,
             b.credit_amount as bank_amount,
-            strftime(b.clean_bank_date, '%Y-%m-%d') as bank_date,
+            b.clean_bank_date as bank_date,
             CASE
                 WHEN ABS(p.amount - b.credit_amount) > 5.0 THEN 'AMOUNT_MISMATCH'
                 WHEN ABS(DATEDIFF('day', TRY_CAST(p.invoice_date AS DATE), TRY_CAST(b.clean_bank_date AS DATE))) > 2 THEN 'DATE_MISMATCH'
