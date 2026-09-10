@@ -60,5 +60,6 @@ frontend/.vercel/
 # Generated frontend type file
 frontend/next-env.d.ts
 
-# Agent workspace artifacts
-.agents/
+# Agent workspace artifacts (allow custom project skills)
+.agents/*
+!.agents/skills/
