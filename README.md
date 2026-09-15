@@ -275,5 +275,7 @@ In the **AI Finance Controller Assistant** chat interface, test the following:
 ## Demo Video
 https://github.com/user-attachments/assets/acbcb2fa-eaef-47e4-b75b-3a04115aff48
 
+---
+
 ## 📄 License
 MIT License. Developed for the **Razorpay Buildathon 2026 (Track 04: AI Finance Controller — Run the books and the cash position)**.
